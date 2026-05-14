@@ -6,19 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added (unreleased on `main`)
-- **Per-key RGB paint-mode editor** in the Lighting view. Selecting the `custom` mode shows a clickable keyboard surface; click-to-paint, brush palette, fill / clear helpers, debounced auto-apply. Wraps the wire-level `set_custom_led` + `apply_lighting(mode=custom)` sequence so the firmware actually renders the buffer.
-- **macOS Now-Playing reader** (Phase 6 preview): new card in the System view polls Music.app + Spotify desktop every 2 s and shows title / artist / album. Foundation for streaming the track to the TFT display once Phase 5b3 unblocks.
-- **Automations library** (Phase 6 part 1): new top-level tab. User defines AppleScript / macOS Shortcut / shell-command entries, persisted as JSON in `~/Library/Application Support/io.github.wsclx.ak820pro-modder/`. Run-button executes host-side and shows stdout / stderr / exit-code inline.
-- **15-entry starter library** in the Automations tab. First-launch contributors can adopt curated examples (system / files / clipboard / media / web / dev) with one click instead of staring at an empty screen.
-- **Keyboard-side automation triggers** (Phase 6 part 2 / Phase 7 prototype): pick "Automations" in the Keymap action picker, click an entry → backend auto-binds an F13–F24 marker via `tauri-plugin-global-shortcut` (Carbon `RegisterEventHotKey` under the hood — no Accessibility permission needed). The selected physical key now fires the automation host-side. Up to 12 automations can be keyboard-triggered simultaneously. Caps bound to automation markers show the automation name on the keyboard surface rather than the raw F-key label.
-- **Factory Defaults button** in the Keymap & Knob view header. Pulls the firmware's stored default keymap for the active layer (via `GET_DEFAULT_KEY_MATRIX` cmd 31 / `GET_DEFAULT_FN_KEY_MATRIX` cmd 28, which we'd declared but not wired) and stages it into the draft. Save commits — a misclick stays in draft state so Discard cleanly undoes it.
-- **Presets tab** (Phase 7b): new top-level nav entry with 10 curated cross-cutting profiles bundling lighting + sparse keymap overrides + automation seeds. Categories: Gaming (FPS · MMO), Dev (Linux Terminal · Vibe Coder · White Hat), Office (MS365), Creative (Music Production · Writing Focus), Lifestyle (Streaming · Travel battery saver). Each preset shows component badges before apply; the apply modal exposes per-component checkboxes (lighting / base keymap / Fn keymap / automations) so the user only takes the parts they want. Inline success banner reports exactly what changed. Applied additively — your other settings are preserved; automations with the same name are skipped, not overwritten.
-
-### Planned for 0.6.0
-- TFT image upload UI (drag-and-drop GIF / PNG → frame extract → resize / dither → upload).
+Planned for 0.7.x
+- TFT image upload UI (drag-and-drop GIF / PNG → frame extract → resize / dither → upload). Gated on Phase 5b3 — USB pcap of the official Windows tool's activation sequence.
 - Audio-reactive lighting via macOS `ScreenCaptureKit` (system-audio tap + FFT → colour map).
+- iCloud-Drive profile sync (macros + automations + lighting snapshots round-tripped through `~/Library/Mobile Documents`).
 - Browser-tab media support in Now-Playing (currently only Music.app + Spotify desktop).
+
+## [0.6.0-beta] — 2026-05-14
+
+Major feature release. Five new top-level capabilities land — Per-key RGB paint surface, macOS Now-Playing reader, Automations library + keyboard-side triggers, cross-cutting Presets, full Light + Dark theming — plus a Factory Defaults rescue path in the Keymap view and a WCAG-AA contrast pass over the entire UI.
+
+### Added
+- **Per-key RGB paint-mode editor** in the Lighting view. Selecting the `custom` mode shows a clickable keyboard surface; click-to-paint, brush palette, fill / clear helpers, debounced auto-apply. Wraps the wire-level `set_custom_led` + `apply_lighting(mode=custom)` sequence so the firmware actually renders the buffer.
+- **macOS Now-Playing reader**: card in the System view polls Music.app + Spotify desktop every 2 s and shows title / artist / album. Foundation for streaming the track to the TFT display once Phase 5b3 unblocks.
+- **Automations library**: new top-level tab. User defines AppleScript / macOS Shortcut / shell-command entries, persisted as JSON in `~/Library/Application Support/io.github.wsclx.ak820pro-modder/`. Run-button executes host-side and shows stdout / stderr / exit-code inline.
+- **15-entry starter library** in the Automations tab. First-launch users adopt curated examples (system / files / clipboard / media / web / dev) with one click instead of an empty screen.
+- **Keyboard-side automation triggers**: pick "Automations" in the Keymap action picker, click an entry → backend auto-binds an F13–F24 marker via `tauri-plugin-global-shortcut` (Carbon `RegisterEventHotKey` under the hood — no Accessibility permission needed). The selected physical key now fires the automation host-side. Up to 12 automations can be keyboard-triggered simultaneously. Caps bound to automation markers show the automation name on the keyboard surface rather than the raw F-key label.
+- **Factory Defaults button** in the Keymap & Knob view header. Pulls the firmware's stored default keymap for the active layer (via `GET_DEFAULT_KEY_MATRIX` cmd 31 / `GET_DEFAULT_FN_KEY_MATRIX` cmd 28) and stages it into the draft. Save commits — a misclick stays in draft state so Discard cleanly undoes it.
+- **Presets tab**: new top-level nav entry with 10 curated cross-cutting profiles bundling lighting + sparse keymap overrides + automation seeds. Categories: Gaming (FPS · MMO), Dev (Linux Terminal · Vibe Coder · White Hat), Office (MS365), Creative (Music Production · Writing Focus), Lifestyle (Streaming · Travel battery saver). Each preset shows component badges before apply; the apply modal exposes per-component checkboxes so the user only takes the parts they want. Inline success banner reports exactly what changed. Applied additively — existing automations with the same name are skipped, not overwritten.
+- **Light theme** with `prefers-color-scheme` detection, manual Sun / Moon toggle in the sidebar footer, persistence in `localStorage`.
+
+### Changed
+- **Foreground contrast pass**: every `fg-*` and `line-*` token lifted to pass WCAG AA on its primary surface (primaries now hit AAA). `fg-3` was previously 2.7 : 1 — a fail for normal text — and is now 4.7 : 1. The whole token system was refactored onto CSS custom properties so the Light theme could re-use the same Tailwind utilities without per-class `dark:` overrides.
+- **Type scale**: `xs` from 11.5 px → 12 px, `2xs` from 10.5 px → 11 px, `sm` 13 → 13.5, `base` 14 → 14.5. Detail rows in modals and cards are no longer squinty.
+
+### Documentation
+- README, CHANGELOG, PROTOCOL, HANDOFF all swept to match the shipping feature set. HANDOFF gains two new foot-gun entries (§ 6.9c on F13–F24 marker keys silently capturing system-wide, § 6.9d on the macos-14 `cargo` → `rustup-init` shadow that bit CI).
 
 ## [0.5.0-beta] — 2026-05-14
 
@@ -59,5 +72,6 @@ First public preview. Five feature phases implemented end-to-end on the AK820 Pr
 - The Page-type enum has 16 values; `Macro` is **6**, not 4 (4 is `SYSTEM_KEY`). A wrong value silently no-ops.
 - Macro wire flags are inverted-looking: `0xB0`/`0x30` is keyboard, `0x90`/`0x10` is mouse.
 
-[Unreleased]: https://github.com/wsclx/ak820pro-modder/compare/v0.5.0-beta...HEAD
+[Unreleased]: https://github.com/wsclx/ak820pro-modder/compare/v0.6.0-beta...HEAD
+[0.6.0-beta]: https://github.com/wsclx/ak820pro-modder/releases/tag/v0.6.0-beta
 [0.5.0-beta]: https://github.com/wsclx/ak820pro-modder/releases/tag/v0.5.0-beta

@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ak820-cli"
-version = "0.5.0-beta"
+version = "0.6.0-beta"
 dependencies = [
  "ak820-protocol",
  "anyhow",
@@ -32,7 +32,7 @@ dependencies = [
 
 [[package]]
 name = "ak820-protocol"
-version = "0.5.0-beta"
+version = "0.6.0-beta"
 dependencies = [
  "hex",
  "hidapi",
@@ -44,7 +44,7 @@ dependencies = [
 
 [[package]]
 name = "ak820pro-app"
-version = "0.5.0-beta"
+version = "0.6.0-beta"
 dependencies = [
  "ak820-protocol",
  "anyhow",

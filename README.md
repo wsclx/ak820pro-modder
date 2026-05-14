@@ -41,9 +41,9 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 
 ## Status
 
-**Version 0.5.0-beta.** Lighting (incl. per-key paint surface), keymap (with factory-default reset), macros, system info, and the host-side automations engine — including a curated 15-entry starter library and one-click cross-cutting presets — are all hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). TFT upload is protocol-complete and ships a CLI smoke test; the in-app TFT UI is gated on one final reverse-engineering step. See the [Roadmap](#roadmap) section for details.
+**Version 0.6.0-beta.** Lighting (incl. per-key paint surface), keymap (with factory-default reset), macros, system info, and the host-side automations engine — including a curated 15-entry starter library and one-click cross-cutting presets — are all hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). TFT upload is protocol-complete and ships a CLI smoke test; the in-app TFT UI is gated on one final reverse-engineering step. See the [Roadmap](#roadmap) section for details.
 
-> ⚠️ **Layout scope.** `v0.5.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. The wire protocol itself is layout-agnostic, so the lighting / system / per-key-RGB / TFT paths work on every AK820 Pro variant — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
+> ⚠️ **Layout scope.** `v0.6.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. The wire protocol itself is layout-agnostic, so the lighting / system / per-key-RGB / TFT paths work on every AK820 Pro variant — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
 
 > ⚠️ Beta software. Read-only paths are safe; write paths have been used extensively on a single physical device without bricking, but there are no warranties. The keyboard's hidden bootloader (under the spacebar, see hardware notes) is your rescue path if anything ever goes sideways.
 
@@ -128,6 +128,12 @@ Full CLI help is `ak820 --help`.
 - **Additive apply** — patches your current state, doesn't wipe anything. The user opts into each component (lighting / base keymap / Fn keymap / automations) per preset.
 - Inline post-apply report showing exactly what changed
 
+### Theming
+- Dark + Light themes, both with foreground contrast above WCAG AA on every text-on-surface combination (primaries hit AAA)
+- System-pref aware on first launch (`prefers-color-scheme`)
+- Manual toggle in the sidebar footer · persisted to `localStorage`
+- Driven by CSS custom properties under `data-theme="dark|light"` on `<html>`, so adding a new theme later (e.g. a high-contrast variant) is one CSS block
+
 ### Coming next
 See the [Roadmap](#roadmap) section and the [`docs/HANDOFF.md`](docs/HANDOFF.md) file for the engineering trail.
 
@@ -192,7 +198,7 @@ Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hard
 
 This is an open project. We need:
 
-- 🧪 **Hardware testers** — `v0.5.0-beta` is built for **ISO-DE only**. If you own an ANSI / ISO-FR / ISO-ES / ISO-UK / JIS AK820 Pro, the wire protocol still works (lighting, system, per-key RGB, TFT), but the Keymap surface will be mislabelled. Capture your physical layout into a new file under `src/data/layouts/` — see the layouts directory's `index.ts` for the three-step add-a-layout recipe.
+- 🧪 **Hardware testers** — `v0.6.0-beta` is built for **ISO-DE only**. If you own an ANSI / ISO-FR / ISO-ES / ISO-UK / JIS AK820 Pro, the wire protocol still works (lighting, system, per-key RGB, TFT), but the Keymap surface will be mislabelled. Capture your physical layout into a new file under `src/data/layouts/` — see the layouts directory's `index.ts` for the three-step add-a-layout recipe.
 - 🕵️ **Reverse engineers** — USB pcap captures of the official Windows tool doing specific actions (especially TFT upload and the per-key RGB enable path).
 - 🦀 **Rust developers** — protocol modules, error handling, additional decoders.
 - ⚛️ **Frontend developers** — UI for TFT image upload, per-key RGB paint mode, audio-reactive visualisation.
@@ -219,4 +225,4 @@ Hardware control surfaces are inherently risky. Read [`SECURITY.md`](SECURITY.md
 
 ---
 
-<sub>v0.5.0-beta · made with ❤️ for the macOS mechanical-keyboard community · open issues / PRs at [github.com/wsclx/ak820pro-modder](https://github.com/wsclx/ak820pro-modder)</sub>
+<sub>v0.6.0-beta · made with ❤️ for the macOS mechanical-keyboard community · open issues / PRs at [github.com/wsclx/ak820pro-modder](https://github.com/wsclx/ak820pro-modder)</sub>
