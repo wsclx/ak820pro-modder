@@ -28,6 +28,13 @@ interface MacroSummary {
   actions: { delay_ms: number; key_code: number; is_press: boolean; kind: string }[];
 }
 
+interface AutomationSummary {
+  id: number;
+  name: string;
+  kind: string;
+  marker_hid: number | null;
+}
+
 interface Keymap {
   slots: KeyAction[];
 }
@@ -65,6 +72,7 @@ export function Keymap() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [macros, setMacros] = useState<MacroSummary[]>([]);
+  const [automations, setAutomations] = useState<AutomationSummary[]>([]);
 
   // NB. Macros must NOT be fetched in a separate useEffect — that would race
   // the base-keymap load() below for the std::sync::Mutex on `ConnState`.
@@ -72,6 +80,22 @@ export function Keymap() {
   // probe_device poll == frozen runtime. We hit this in System.tsx Phase 2
   // and again here when the Keymap view first added the macro tab. The fetch
   // is chained off load() instead (see useEffect with `load("base")`).
+  //
+  // Automations are host-only — no HID, safe to fetch in parallel.
+  useEffect(() => {
+    invoke<AutomationSummary[]>("list_automations")
+      .then(setAutomations)
+      .catch(() => setAutomations([]));
+  }, []);
+
+  async function refreshAutomations() {
+    try {
+      const next = await invoke<AutomationSummary[]>("list_automations");
+      setAutomations(next);
+    } catch {
+      /* swallow */
+    }
+  }
 
   const macroActionGroup = useMemo<ActionGroup | null>(() => {
     if (macros.length === 0) return null;
@@ -92,6 +116,25 @@ export function Keymap() {
       })),
     };
   }, [macros]);
+
+  const automationActionGroup = useMemo<ActionGroup | null>(() => {
+    if (automations.length === 0) return null;
+    return {
+      id: "automation",
+      name: "Automations",
+      description:
+        "Trigger a host-side automation when this key is pressed. Up to 12 automations can be keyboard-triggered at once (markers F13–F24).",
+      entries: automations.map<ActionEntry>((a) => ({
+        label: a.name,
+        hint: a.name.length > 8 ? a.name.slice(0, 7) + "…" : a.name,
+        action: {
+          kind: "automation_ref",
+          automation_id: a.id,
+          name: a.name,
+        },
+      })),
+    };
+  }, [automations]);
 
   const remote = layer === "base" ? baseRemote : fnRemote;
   const draft = layer === "base" ? baseDraft : fnDraft;
@@ -148,8 +191,28 @@ export function Keymap() {
     setSelectedSlot(null);
   }
 
-  function assignAction(slot: number, action: Action) {
+  async function assignAction(slot: number, action: Action) {
     if (!draft) return;
+
+    // automation_ref is a picker-only sentinel — translate into a real
+    // KeyAction::Keyboard with the marker HID that the backend hands us.
+    if (action.kind === "automation_ref") {
+      setErr(null);
+      try {
+        const marker = await invoke<number>("assign_automation_marker", {
+          id: action.automation_id,
+          suggested: null,
+        });
+        await refreshAutomations();
+        const next: Keymap = { slots: draft.slots.slice() };
+        next.slots[slot] = { kind: "keyboard", usage: marker };
+        setDraft(next);
+      } catch (e) {
+        setErr(`Couldn't bind automation: ${e}`);
+      }
+      return;
+    }
+
     const next: Keymap = { slots: draft.slots.slice() };
     next.slots[slot] = action as KeyAction;
     setDraft(next);
@@ -219,6 +282,7 @@ export function Keymap() {
           km={draft}
           dirty={dirty}
           selectedSlot={selectedSlot}
+          automations={automations}
           onSelect={setSelectedSlot}
         />
       </Card>
@@ -242,8 +306,8 @@ export function Keymap() {
               slot={selectedSlot}
               defaultHid={defaultHidForSlot(selectedSlot)}
               currentAction={draft?.slots[selectedSlot]}
-              extraGroup={macroActionGroup}
-              onAssign={(a) => assignAction(selectedSlot, a)}
+              extraGroups={[macroActionGroup, automationActionGroup]}
+              onAssign={(a) => void assignAction(selectedSlot, a)}
             />
           </>
         )}
@@ -295,12 +359,14 @@ function KeyboardSurface({
   km,
   dirty,
   selectedSlot,
+  automations,
   onSelect,
 }: {
   layout: PhysicalKey[][];
   km: Keymap | null;
   dirty: Set<number>;
   selectedSlot: number | null;
+  automations: AutomationSummary[];
   onSelect: (slot: number | null) => void;
 }) {
   const NAV_LABELS = new Set(["Ende", "Bild↑", "Bild↓"]);
@@ -331,6 +397,7 @@ function KeyboardSurface({
                   isLastInRow={ki === row.length - 1}
                   dirty={dirty.has(k.slot)}
                   selected={selectedSlot === k.slot}
+                  automations={automations}
                   onSelect={onSelect}
                 />
               ))}
@@ -353,18 +420,21 @@ function KeyboardSurface({
             <Cap pk={navByRow[1]} km={km} isLastInRow={false}
               dirty={dirty.has(navByRow[1].slot)}
               selected={selectedSlot === navByRow[1].slot}
+              automations={automations}
               onSelect={onSelect} />
           )}
           {navByRow[2] && (
             <Cap pk={navByRow[2]} km={km} isLastInRow={false}
               dirty={dirty.has(navByRow[2].slot)}
               selected={selectedSlot === navByRow[2].slot}
+              automations={automations}
               onSelect={onSelect} />
           )}
           {navByRow[3] && (
             <Cap pk={navByRow[3]} km={km} isLastInRow={false}
               dirty={dirty.has(navByRow[3].slot)}
               selected={selectedSlot === navByRow[3].slot}
+              automations={automations}
               onSelect={onSelect} />
           )}
           <TFTPlaceholder height={TFT_HEIGHT} />
@@ -426,17 +496,18 @@ function splitLabel(label: string): LabelParts {
 }
 
 function Cap({
-  pk, km, isLastInRow, dirty, selected, onSelect,
+  pk, km, isLastInRow, dirty, selected, automations, onSelect,
 }: {
   pk: PhysicalKey;
   km: Keymap | null;
   isLastInRow: boolean;
   dirty: boolean;
   selected: boolean;
+  automations: AutomationSummary[];
   onSelect: (slot: number | null) => void;
 }) {
   const action = km?.slots[pk.slot];
-  const detail = describeAction(action, pk);
+  const detail = describeAction(action, pk, automations);
   const remapped = detail.tone !== "default";
   const s = capStyleFor(pk.cls, pk.label, isLastInRow);
   const parts = splitLabel(displayLabel(pk.label));
@@ -497,12 +568,30 @@ function Cap({
 
 interface ActionDetail { short: string; title: string; tone: "default" | "accent" | "warn" }
 
-function describeAction(a: KeyAction | undefined, pk: PhysicalKey): ActionDetail {
+function describeAction(
+  a: KeyAction | undefined,
+  pk: PhysicalKey,
+  automations: AutomationSummary[],
+): ActionDetail {
   if (!a || a.kind === "default") {
     return { short: hidName(pk.hid), title: `Slot ${pk.slot} · default (${hidName(pk.hid)})`, tone: "default" };
   }
   switch (a.kind) {
-    case "keyboard":
+    case "keyboard": {
+      // Markers in HID 104..115 (F13..F24) may be bound to a host automation.
+      // If so, surface the automation name on the cap so the user sees the
+      // mapping rather than a meaningless F-key label.
+      if (a.usage >= 104 && a.usage <= 115) {
+        const auto = automations.find((au) => au.marker_hid === a.usage);
+        if (auto) {
+          const short = auto.name.length > 5 ? auto.name.slice(0, 4) + "…" : auto.name;
+          return {
+            short,
+            title: `Slot ${pk.slot} · automation "${auto.name}" (marker F${a.usage - 91})`,
+            tone: "accent",
+          };
+        }
+      }
       if (a.usage === pk.hid) {
         return { short: hidName(a.usage), title: `Slot ${pk.slot} · default (${hidName(a.usage)})`, tone: "default" };
       }
@@ -511,6 +600,7 @@ function describeAction(a: KeyAction | undefined, pk: PhysicalKey): ActionDetail
         title: `Slot ${pk.slot} · remapped to ${hidName(a.usage)} (HID 0x${a.usage.toString(16)})`,
         tone: "accent",
       };
+    }
     case "mouse":
       return { short: `M${a.button}`, title: `Slot ${pk.slot} · mouse button ${a.button}`, tone: "warn" };
     case "consumer_key":
@@ -535,18 +625,21 @@ function ActionPicker({
   slot,
   defaultHid,
   currentAction,
-  extraGroup,
+  extraGroups,
   onAssign,
 }: {
   slot: number;
   defaultHid: number | null;
   currentAction: KeyAction | undefined;
-  extraGroup: ActionGroup | null;
+  extraGroups: (ActionGroup | null)[];
   onAssign: (a: Action) => void;
 }) {
   const groups = useMemo<ActionGroup[]>(
-    () => (extraGroup ? [...ACTION_GROUPS, extraGroup] : ACTION_GROUPS),
-    [extraGroup],
+    () => [
+      ...ACTION_GROUPS,
+      ...extraGroups.filter((g): g is ActionGroup => g !== null),
+    ],
+    [extraGroups],
   );
   const [groupId, setGroupId] = useState<string>(groups[0].id);
   const group = groups.find((g) => g.id === groupId) ?? groups[0];

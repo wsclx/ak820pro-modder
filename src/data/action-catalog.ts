@@ -13,7 +13,14 @@ export type Action =
   | { kind: "consumer_key"; value: number }
   | { kind: "mouse"; button: number; value: number }
   | { kind: "macro"; macro_id: number; param2: number; param3: number }
-  | { kind: "tgl"; value: number };
+  | { kind: "tgl"; value: number }
+  // Picker-only sentinel — never lands in the device keymap. When the user
+  // clicks an automation entry, the parent view calls assign_automation_marker
+  // (which picks/returns an F13–F24 marker), then writes the slot as
+  // { kind: "keyboard", usage: marker } so the keyboard literally emits that
+  // F-key. The host-side global-shortcut listener catches the marker and
+  // runs the automation.
+  | { kind: "automation_ref"; automation_id: number; name: string };
 
 export interface ActionEntry {
   label: string;

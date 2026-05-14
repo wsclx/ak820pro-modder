@@ -8,7 +8,8 @@ use ak820_protocol::{
     Connection, DeviceInfo,
 };
 use serde::Serialize;
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
@@ -18,6 +19,110 @@ mod starter_library;
 use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
 use starter_library::StarterAutomation;
+
+/// HID codes F13..F24 reserved as global-shortcut markers for automations.
+/// Inclusive range — gives the user 12 keyboard-triggerable automations.
+const MARKER_HID_RANGE: std::ops::RangeInclusive<u8> = 104..=115;
+
+/// Map an HID Keyboard Usage Code to the string label
+/// `tauri-plugin-global-shortcut` expects (and back-channel parses).
+fn hid_to_shortcut_label(hid: u8) -> Option<&'static str> {
+    match hid {
+        104 => Some("F13"),
+        105 => Some("F14"),
+        106 => Some("F15"),
+        107 => Some("F16"),
+        108 => Some("F17"),
+        109 => Some("F18"),
+        110 => Some("F19"),
+        111 => Some("F20"),
+        112 => Some("F21"),
+        113 => Some("F22"),
+        114 => Some("F23"),
+        115 => Some("F24"),
+        _ => None,
+    }
+}
+
+/// Re-register the global-shortcut handlers from the current on-disk
+/// automations list. Called on app startup and after every
+/// `save_automations` / `assign_automation_marker` / `unassign_*`.
+///
+/// Always wipes the existing registration first — a marker can only be
+/// bound to one automation at a time, and the user is free to reshuffle.
+fn refresh_automation_shortcuts(app: &AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    let list = automations::load(dir)?;
+    let mgr = app.global_shortcut();
+    mgr.unregister_all()
+        .map_err(|e| format!("unregister_all: {e}"))?;
+    for a in list {
+        let Some(marker) = a.marker_hid else { continue };
+        let Some(label) = hid_to_shortcut_label(marker) else {
+            continue;
+        };
+        let shortcut: Shortcut = label.parse().map_err(|e| format!("parse {label}: {e}"))?;
+        let automation_id = a.id;
+        let app_handle = app.clone();
+        mgr.on_shortcut(shortcut, move |_app, _sc, event| {
+            if event.state() != ShortcutState::Pressed {
+                return;
+            }
+            let app = app_handle.clone();
+            tauri::async_runtime::spawn(async move {
+                run_automation_by_id(&app, automation_id).await;
+            });
+        })
+        .map_err(|e| format!("on_shortcut({label}): {e}"))?;
+        tracing::info!(automation_id, label, "registered global-shortcut marker");
+    }
+    Ok(())
+}
+
+async fn run_automation_by_id(app: &AppHandle, id: u64) {
+    let dir = match app.path().app_data_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!("app_data_dir: {e}");
+            return;
+        }
+    };
+    let dir_clone = dir.clone();
+    let list = match tokio::task::spawn_blocking(move || automations::load(dir_clone)).await {
+        Ok(Ok(l)) => l,
+        Ok(Err(e)) => {
+            tracing::warn!("load: {e}");
+            return;
+        }
+        Err(e) => {
+            tracing::warn!("join: {e}");
+            return;
+        }
+    };
+    let Some(automation) = list.into_iter().find(|a| a.id == id) else {
+        tracing::warn!("automation {id} no longer exists");
+        return;
+    };
+    let name = automation.name.clone();
+    let res = tokio::task::spawn_blocking(move || automations::run(&automation))
+        .await
+        .unwrap_or_else(|_| automations::RunResult {
+            exit_code: None,
+            stdout: String::new(),
+            stderr: "spawn_blocking failed".into(),
+            success: false,
+        });
+    tracing::info!(
+        automation_id = id,
+        automation_name = %name,
+        success = res.success,
+        exit_code = ?res.exit_code,
+        "shortcut-triggered automation done"
+    );
+}
 
 #[derive(Debug, thiserror::Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
@@ -286,15 +391,106 @@ async fn list_automations(app: tauri::AppHandle) -> Result<Vec<Automation>, AppE
 }
 
 #[tauri::command]
-async fn save_automations(app: tauri::AppHandle, list: Vec<Automation>) -> Result<(), AppError> {
+async fn save_automations(app: AppHandle, list: Vec<Automation>) -> Result<(), AppError> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
-    tokio::task::spawn_blocking(move || automations::save(dir, &list))
+    let list_clone = list.clone();
+    tokio::task::spawn_blocking(move || automations::save(dir, &list_clone))
         .await
         .map_err(|e| AppError::Protocol(format!("join: {e}")))?
-        .map_err(AppError::Protocol)
+        .map_err(AppError::Protocol)?;
+    refresh_automation_shortcuts(&app).map_err(AppError::Protocol)?;
+    Ok(())
+}
+
+/// Bind an automation to a keyboard marker (one of HID 104..=115 = F13..F24).
+/// If the automation already has a marker, returns it unchanged. Otherwise
+/// picks the first free marker, persists, and re-registers the global
+/// hotkey handlers. The frontend then writes a keyboard slot with the
+/// returned HID code so the physical key emits the marker, which the
+/// listener catches and runs the automation.
+#[tauri::command]
+async fn assign_automation_marker(
+    app: AppHandle,
+    id: u64,
+    suggested: Option<u8>,
+) -> Result<u8, AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    let chosen = {
+        let dir = dir.clone();
+        tokio::task::spawn_blocking(move || -> Result<u8, String> {
+            let mut list = automations::load(dir.clone())?;
+            let pos = list
+                .iter()
+                .position(|a| a.id == id)
+                .ok_or_else(|| format!("automation {id} not found"))?;
+            if let Some(m) = list[pos].marker_hid {
+                return Ok(m);
+            }
+            let used: std::collections::HashSet<u8> =
+                list.iter().filter_map(|a| a.marker_hid).collect();
+            let chosen = match suggested {
+                Some(s) if MARKER_HID_RANGE.contains(&s) && !used.contains(&s) => s,
+                _ => MARKER_HID_RANGE
+                    .clone()
+                    .find(|c| !used.contains(c))
+                    .ok_or_else(|| {
+                        "All 12 marker slots (F13–F24) already bound — unassign one first."
+                            .to_string()
+                    })?,
+            };
+            list[pos].marker_hid = Some(chosen);
+            list[pos].updated_at = unix_millis();
+            automations::save(dir, &list)?;
+            Ok(chosen)
+        })
+        .await
+        .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+        .map_err(AppError::Protocol)?
+    };
+    refresh_automation_shortcuts(&app).map_err(AppError::Protocol)?;
+    Ok(chosen)
+}
+
+/// Clear an automation's marker assignment. Idempotent — no-op if the
+/// automation had no marker. After clearing, the global hotkey is
+/// unregistered; any keyboard slot that still emits the old marker just
+/// types F13/F14/… as a regular HID keystroke.
+#[tauri::command]
+async fn unassign_automation_marker(app: AppHandle, id: u64) -> Result<(), AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    let dir_clone = dir.clone();
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let mut list = automations::load(dir_clone.clone())?;
+        if let Some(pos) = list.iter().position(|a| a.id == id) {
+            if list[pos].marker_hid.is_some() {
+                list[pos].marker_hid = None;
+                list[pos].updated_at = unix_millis();
+                automations::save(dir_clone, &list)?;
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+    .map_err(AppError::Protocol)?;
+    refresh_automation_shortcuts(&app).map_err(AppError::Protocol)?;
+    Ok(())
+}
+
+fn unix_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 #[tauri::command]
@@ -409,6 +605,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ConnState::default())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             list_devices,
             probe_device,
@@ -435,6 +632,8 @@ pub fn run() {
             run_automation,
             list_shortcuts,
             get_starter_library,
+            assign_automation_marker,
+            unassign_automation_marker,
         ])
         .setup(|app| {
             use tauri::Manager;
@@ -524,6 +723,14 @@ pub fn run() {
             // DevTools is one keypress away (Cmd+Alt+I) — don't auto-open,
             // because that has previously coincided with WKWebView freezes
             // during initial page load on some macOS versions.
+
+            // Register global hotkeys for every automation that already
+            // has a marker assigned. Done after the menu setup so the
+            // plugin is fully initialised. Failure is logged but doesn't
+            // block launch — the user can still adopt + re-bind.
+            if let Err(e) = refresh_automation_shortcuts(app.handle()) {
+                tracing::warn!("initial automation shortcut registration failed: {e}");
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
