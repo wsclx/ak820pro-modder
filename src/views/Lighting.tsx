@@ -26,6 +26,13 @@ export function Lighting() {
   const [autoApply, setAutoApply] = useState(true);
   const [lastApplied, setLastApplied] = useState<string | null>(null);
 
+  // Audio-reactive lighting (macOS only). The backend keeps the
+  // authoritative state — we poll every 3s so a loop self-exit (capture
+  // crashed, permission revoked) clears the toggle without the user
+  // having to click anything.
+  const [audioReactive, setAudioReactive] = useState(false);
+  const [audioBusy, setAudioBusy] = useState(false);
+
   const pendingTimer = useRef<number | null>(null);
   const inflight = useRef(false);
   const queued = useRef<LightingConfig | null>(null);
@@ -35,6 +42,49 @@ export function Lighting() {
       .then(setModes)
       .catch((e) => setErr(formatError(e)));
   }, []);
+
+  // Initial status + drift-detection poll. 3s is a compromise between
+  // catching crashes promptly and not hammering the IPC channel.
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => {
+      invoke<boolean>("audio_reactive_status")
+        .then((on) => {
+          if (alive) setAudioReactive(on);
+        })
+        .catch(() => {
+          // The command stubs to error on non-macOS — silently treat
+          // that as "not running".
+          if (alive) setAudioReactive(false);
+        });
+    };
+    refresh();
+    const id = window.setInterval(refresh, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  async function toggleAudioReactive(on: boolean) {
+    setAudioBusy(true);
+    setErr(null);
+    try {
+      if (on) {
+        await invoke("audio_reactive_start");
+        setAudioReactive(true);
+      } else {
+        await invoke("audio_reactive_stop");
+        setAudioReactive(false);
+      }
+    } catch (e) {
+      setErr(formatError(e));
+      // Backend authority: if start failed, ensure UI shows off.
+      setAudioReactive(false);
+    } finally {
+      setAudioBusy(false);
+    }
+  }
 
   const currentMode = useMemo(
     () => modes?.find((m) => m.name === cfg.mode),
@@ -116,7 +166,40 @@ export function Lighting() {
       <ErrorBanner>{err}</ErrorBanner>
 
       <div className="grid gap-6">
-        <Card title="Mode" action={lastApplied && <span className="text-xs text-fg-3">last applied {lastApplied}</span>}>
+        <Card
+          title="Audio-reactive"
+          action={
+            <Toggle checked={audioReactive} onChange={toggleAudioReactive} disabled={audioBusy}>
+              {audioReactive ? "Streaming" : "Off"}
+            </Toggle>
+          }
+        >
+          <p className="text-sm text-fg-2">
+            Taps the macOS system-audio mix, runs an FFT, and paints the keyboard with
+            bass / mids / highs as red / green / blue across vertical zones. While
+            on, the firmware sits in <code>custom</code> mode and the controls
+            below are paused — turn this off to set static modes or per-key colours.
+          </p>
+          <p className="mt-2 text-xs text-fg-3">
+            First run pops the macOS Screen Recording permission prompt — that's
+            normal, ScreenCaptureKit shares the same TCC bucket even for
+            audio-only capture. Once granted, the toggle works silently.
+          </p>
+        </Card>
+
+        <div
+          className={["grid gap-6", audioReactive ? "pointer-events-none opacity-50" : ""].join(" ")}
+        >
+        <Card
+          title="Mode"
+          action={
+            lastApplied && !audioReactive ? (
+              <span className="text-xs text-fg-3">last applied {lastApplied}</span>
+            ) : audioReactive ? (
+              <span className="text-xs text-fg-3">paused while audio-reactive is on</span>
+            ) : null
+          }
+        >
           <div className="flex flex-wrap gap-2">
             {modes.map((m) => {
               const isActive = m.name === cfg.mode;
@@ -244,6 +327,7 @@ export function Lighting() {
         </Card>
         </>
         )}
+        </div>
       </div>
     </>
   );

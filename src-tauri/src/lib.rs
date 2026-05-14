@@ -13,6 +13,8 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(target_os = "macos")]
+mod audio_reactive;
 mod automations;
 mod now_playing;
 mod presets;
@@ -21,6 +23,7 @@ use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
 use presets::Preset;
 use starter_library::StarterAutomation;
+use std::sync::Arc;
 
 /// HID codes F13..F24 reserved as global-shortcut markers for automations.
 /// Inclusive range — gives the user 12 keyboard-triggerable automations.
@@ -205,7 +208,7 @@ fn is_stale_handle_error(err: &AppError) -> bool {
     msg.contains("disconnected") || msg.contains("Device not found") || msg.contains("HID error")
 }
 
-fn ensure_open(slot: &mut Option<Connection>) -> Result<&Connection, AppError> {
+pub(crate) fn ensure_open(slot: &mut Option<Connection>) -> Result<&Connection, AppError> {
     if slot.is_none() {
         *slot = Some(Connection::open_control()?);
     }
@@ -246,7 +249,7 @@ fn probe_device() -> Result<ProbeReport, AppError> {
 }
 
 #[tauri::command]
-async fn close_device(state: State<'_, ConnState>) -> Result<(), AppError> {
+async fn close_device(state: State<'_, Arc<ConnState>>) -> Result<(), AppError> {
     state
         .with(|slot| {
             slot.take();
@@ -278,7 +281,7 @@ fn list_lighting_modes() -> Vec<LightingModeInfo> {
 }
 
 #[tauri::command]
-async fn get_device_info(state: State<'_, ConnState>) -> Result<DeviceInfoReport, AppError> {
+async fn get_device_info(state: State<'_, Arc<ConnState>>) -> Result<DeviceInfoReport, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -288,7 +291,7 @@ async fn get_device_info(state: State<'_, ConnState>) -> Result<DeviceInfoReport
 }
 
 #[tauri::command]
-async fn get_game_mode(state: State<'_, ConnState>) -> Result<GameMode, AppError> {
+async fn get_game_mode(state: State<'_, Arc<ConnState>>) -> Result<GameMode, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -298,7 +301,7 @@ async fn get_game_mode(state: State<'_, ConnState>) -> Result<GameMode, AppError
 }
 
 #[tauri::command]
-async fn set_game_mode(state: State<'_, ConnState>, mode: GameMode) -> Result<(), AppError> {
+async fn set_game_mode(state: State<'_, Arc<ConnState>>, mode: GameMode) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -314,7 +317,7 @@ fn list_sleep_presets() -> Vec<SleepPreset> {
 }
 
 #[tauri::command]
-async fn get_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
+async fn get_keymap(state: State<'_, Arc<ConnState>>) -> Result<Keymap, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -324,7 +327,7 @@ async fn get_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
 }
 
 #[tauri::command]
-async fn get_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
+async fn get_fn_keymap(state: State<'_, Arc<ConnState>>) -> Result<Keymap, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -337,7 +340,7 @@ async fn get_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> 
 /// the user's current state. The UI uses this to stage a reset that the
 /// user reviews before pressing Save.
 #[tauri::command]
-async fn get_default_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
+async fn get_default_keymap(state: State<'_, Arc<ConnState>>) -> Result<Keymap, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -347,7 +350,7 @@ async fn get_default_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppEr
 }
 
 #[tauri::command]
-async fn get_default_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
+async fn get_default_fn_keymap(state: State<'_, Arc<ConnState>>) -> Result<Keymap, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -357,7 +360,7 @@ async fn get_default_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, Ap
 }
 
 #[tauri::command]
-async fn set_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<(), AppError> {
+async fn set_keymap(state: State<'_, Arc<ConnState>>, keymap: Keymap) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -368,7 +371,7 @@ async fn set_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<(), A
 }
 
 #[tauri::command]
-async fn set_fn_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<(), AppError> {
+async fn set_fn_keymap(state: State<'_, Arc<ConnState>>, keymap: Keymap) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -379,7 +382,7 @@ async fn set_fn_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<()
 }
 
 #[tauri::command]
-async fn get_macros(state: State<'_, ConnState>) -> Result<Vec<Macro>, AppError> {
+async fn get_macros(state: State<'_, Arc<ConnState>>) -> Result<Vec<Macro>, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -389,7 +392,7 @@ async fn get_macros(state: State<'_, ConnState>) -> Result<Vec<Macro>, AppError>
 }
 
 #[tauri::command]
-async fn set_macros(state: State<'_, ConnState>, macros: Vec<Macro>) -> Result<(), AppError> {
+async fn set_macros(state: State<'_, Arc<ConnState>>, macros: Vec<Macro>) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -400,7 +403,7 @@ async fn set_macros(state: State<'_, ConnState>, macros: Vec<Macro>) -> Result<(
 }
 
 #[tauri::command]
-async fn get_custom_led(state: State<'_, ConnState>) -> Result<CustomLedMap, AppError> {
+async fn get_custom_led(state: State<'_, Arc<ConnState>>) -> Result<CustomLedMap, AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -410,7 +413,10 @@ async fn get_custom_led(state: State<'_, ConnState>) -> Result<CustomLedMap, App
 }
 
 #[tauri::command]
-async fn set_custom_led(state: State<'_, ConnState>, map: CustomLedMap) -> Result<(), AppError> {
+async fn set_custom_led(
+    state: State<'_, Arc<ConnState>>,
+    map: CustomLedMap,
+) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
@@ -624,7 +630,7 @@ pub struct ApplyPresetReport {
 #[tauri::command]
 async fn apply_preset(
     app: AppHandle,
-    state: State<'_, ConnState>,
+    state: State<'_, Arc<ConnState>>,
     id: String,
     options: ApplyPresetOptions,
 ) -> Result<ApplyPresetReport, AppError> {
@@ -760,7 +766,7 @@ async fn get_now_playing() -> Result<NowPlaying, AppError> {
 /// the device. The UI exposes this as the manual "Reconnect" action and we
 /// also use it internally when the keyboard goes away (unplug, sleep, etc.).
 #[tauri::command]
-async fn force_reconnect(state: State<'_, ConnState>) -> Result<(), AppError> {
+async fn force_reconnect(state: State<'_, Arc<ConnState>>) -> Result<(), AppError> {
     state
         .with(|slot| {
             slot.take();
@@ -771,7 +777,7 @@ async fn force_reconnect(state: State<'_, ConnState>) -> Result<(), AppError> {
 
 #[tauri::command]
 async fn apply_lighting(
-    state: State<'_, ConnState>,
+    state: State<'_, Arc<ConnState>>,
     config: LightingConfig,
 ) -> Result<(), AppError> {
     // Stale-handle retry is now handled generically by `ConnState::with`.
@@ -793,6 +799,72 @@ fn direction_name(d: &Direction) -> &'static str {
     }
 }
 
+/* ---------------------------------------------- audio-reactive (Phase 6) --
+ *
+ * Three commands the Lighting view uses:
+ *   audio_reactive_start    - open SCStream, switch firmware to Custom,
+ *                             begin streaming Frame→CustomLedMap at 30 fps.
+ *                             Returns Err on TCC-denied / no displays /
+ *                             permission-revoked-at-runtime cases so the
+ *                             toggle can revert and show a useful message.
+ *   audio_reactive_stop     - signal the loop, return immediately. The
+ *                             loop self-clears its handle slot ≤33 ms later.
+ *   audio_reactive_status   - non-blocking is-running probe for the UI's
+ *                             periodic poll.
+ *
+ * On non-macOS hosts (no SCStream) the commands stay registered but each
+ * returns `Err("audio-reactive requires macOS 13+")` so the UI gets a
+ * clean message rather than a missing-command error.
+ */
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn audio_reactive_start(
+    conn: State<'_, Arc<ConnState>>,
+    audio: State<'_, Arc<audio_reactive::AudioReactiveState>>,
+) -> Result<(), AppError> {
+    let audio = audio.inner().clone();
+    let conn = conn.inner().clone();
+    audio.start(conn).await
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn audio_reactive_stop(
+    audio: State<'_, Arc<audio_reactive::AudioReactiveState>>,
+) -> Result<(), AppError> {
+    audio.stop().await;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn audio_reactive_status(
+    audio: State<'_, Arc<audio_reactive::AudioReactiveState>>,
+) -> Result<bool, AppError> {
+    Ok(audio.is_running().await)
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn audio_reactive_start() -> Result<(), AppError> {
+    Err(AppError::Protocol(
+        "audio-reactive requires macOS 13+ (ScreenCaptureKit not available)".into(),
+    ))
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn audio_reactive_stop() -> Result<(), AppError> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn audio_reactive_status() -> Result<bool, AppError> {
+    Ok(false)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -802,9 +874,18 @@ pub fn run() {
         .with_target(false)
         .init();
 
-    tauri::Builder::default()
-        .manage(ConnState::default())
-        .plugin(tauri_plugin_shell::init())
+    let builder = tauri::Builder::default()
+        .manage(Arc::new(ConnState::default()))
+        .plugin(tauri_plugin_shell::init());
+
+    // Audio-reactive state is macOS-only; on Linux/Windows we still
+    // expose the three Tauri commands (they stub out with "requires
+    // macOS 13+") so the frontend can render its disabled state
+    // without conditionally importing.
+    #[cfg(target_os = "macos")]
+    let builder = builder.manage(Arc::new(audio_reactive::AudioReactiveState::default()));
+
+    builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             list_devices,
@@ -838,6 +919,9 @@ pub fn run() {
             unassign_automation_marker,
             list_presets,
             apply_preset,
+            audio_reactive_start,
+            audio_reactive_stop,
+            audio_reactive_status,
         ])
         .setup(|app| {
             use tauri::Manager;

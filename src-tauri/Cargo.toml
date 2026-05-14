@@ -26,4 +26,14 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
-tokio = { version = "1", features = ["sync"] }
+# `rt-multi-thread` so the audio-reactive streamer can spawn its loop
+# without starving the rest of the runtime. `time` for the frame
+# pacing inside that loop. `macros` so we can keep using #[tauri::command]
+# attrs that depend on tokio's spawn.
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "time", "macros"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Audio-reactive lighting (Phase 6 part 1b). `capture` pulls in
+# ScreenCaptureKit + the Swift static lib; the Swift runtime rpath is
+# baked in by `build.rs` below.
+ak820-audio-reactive = { path = "../crates/ak820-audio-reactive", features = ["capture"] }
