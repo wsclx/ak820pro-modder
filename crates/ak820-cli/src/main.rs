@@ -101,6 +101,11 @@ enum AudioCmd {
         /// throttles how often we render to stdout.
         #[arg(long, default_value_t = 20)]
         hz: u32,
+        /// On the first analyze call, dump raw PCM stats (sample count,
+        /// peak, RMS, first 8 values) to stderr. Useful when the meter
+        /// looks suspicious (everything saturating, everything zero, …).
+        #[arg(long)]
+        debug: bool,
     },
 }
 
@@ -190,7 +195,11 @@ fn main() -> Result<()> {
         Cmd::Tft(TftCmd::Cycle { delay }) => cmd_tft_cycle(cli.json, delay),
         Cmd::Tft(TftCmd::SelectIndex { index }) => cmd_tft_select_index(cli.json, index),
         #[cfg(target_os = "macos")]
-        Cmd::Audio(AudioCmd::Meter { duration, hz }) => cmd_audio_meter(cli.json, duration, hz),
+        Cmd::Audio(AudioCmd::Meter {
+            duration,
+            hz,
+            debug,
+        }) => cmd_audio_meter(cli.json, duration, hz, debug),
         Cmd::Lighting(LightingCmd::Modes) => cmd_lighting_modes(cli.json),
         Cmd::Lighting(LightingCmd::Set {
             mode,
@@ -670,7 +679,7 @@ fn cmd_game_mode_set_sleep(json: bool, value: u8) -> Result<()> {
 /// the numbers look sensible we hook the same pipeline into the Tauri
 /// app and drive per-key RGB.
 #[cfg(target_os = "macos")]
-fn cmd_audio_meter(json: bool, duration: u32, hz: u32) -> Result<()> {
+fn cmd_audio_meter(json: bool, duration: u32, hz: u32, debug: bool) -> Result<()> {
     use ak820_audio_reactive::{Analyzer, Capture};
     use std::time::{Duration, Instant};
 
@@ -704,6 +713,7 @@ fn cmd_audio_meter(json: bool, duration: u32, hz: u32) -> Result<()> {
     let start = Instant::now();
     let frame_period = Duration::from_secs_f32(1.0 / hz as f32);
     let mut next_tick = Instant::now();
+    let mut debug_printed = false;
 
     loop {
         if duration > 0 && start.elapsed() >= Duration::from_secs(duration as u64) {
@@ -724,6 +734,22 @@ fn cmd_audio_meter(json: bool, duration: u32, hz: u32) -> Result<()> {
 
         let now = Instant::now();
         if now >= next_tick && pcm.len() >= buffer_target {
+            if debug && !debug_printed {
+                debug_printed = true;
+                let tail = &pcm[pcm.len() - buffer_target..];
+                let peak = tail.iter().fold(0f32, |a, &b| a.max(b.abs()));
+                let rms = {
+                    let sum: f32 = tail.iter().map(|s| s * s).sum();
+                    (sum / tail.len() as f32).sqrt()
+                };
+                let head: Vec<f32> = tail[..8].to_vec();
+                eprintln!(
+                    "[ak820 audio] PCM debug — buffered={} samples, FFT window {} \
+                     samples: peak={peak:.4}, rms={rms:.4}, first 8={head:?}",
+                    pcm.len(),
+                    tail.len(),
+                );
+            }
             let frame = analyzer.analyze(&pcm);
             let ts = start.elapsed().as_secs_f32();
             if json {

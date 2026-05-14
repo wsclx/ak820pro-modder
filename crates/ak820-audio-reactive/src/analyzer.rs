@@ -92,6 +92,19 @@ impl Analyzer {
             .expect("realfft process: input/output vec mismatch");
 
         let bin_hz = self.sample_rate / FFT_LEN as f32;
+        // realfft returns *unnormalised* magnitudes — for a unity sine
+        // input over `FFT_LEN` samples the peak bin has |c| ≈ N/2. We
+        // need a normalisation factor so the numbers we feed into the
+        // dB scale below land in the 0..=1 band the FLOOR_DB / 0 dB
+        // endpoints assume. Without it the dB scale saturates at +40dB
+        // for any real audio and all three lights peg to 1.0 — that's
+        // what was happening on Mario's 0.6.0-beta build of this code.
+        //
+        // Factor choice: 4/N rather than the textbook 2/N. The Hann
+        // window has coherent gain 0.5, so multiplying by 2 recovers a
+        // unity-sine to ~unity amplitude. The dB scale then has the
+        // full -60..0 dB dynamic range to work with for real audio.
+        let amplitude_norm = 4.0 / FFT_LEN as f32;
         let band = |from_hz: f32, to_hz: f32| -> f32 {
             // bin 0 is DC; skip it.
             let from = ((from_hz / bin_hz) as usize).max(1);
@@ -99,9 +112,10 @@ impl Analyzer {
             if to <= from {
                 return 0.0;
             }
-            // RMS magnitude: sqrt(mean(|c|²)).
+            // RMS magnitude across the band, then normalise.
             let sum: f32 = self.output[from..to].iter().map(|c| c.norm_sqr()).sum();
-            (sum / (to - from) as f32).sqrt()
+            let rms = (sum / (to - from) as f32).sqrt();
+            rms * amplitude_norm
         };
 
         let scale = |raw: f32| -> f32 {
