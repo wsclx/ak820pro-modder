@@ -539,6 +539,42 @@ what System, Macros, and Keymap views were showing on every failure.
 Always go through `src/errors.ts → formatError(e)` in view code, never
 `String(e)`. Lint-rule candidate but currently policed by code review.
 
+### 6.9g Swift runtime rpath dance for `ak820-audio-reactive`
+`screencapturekit 2.1.0` uses a Swift static lib (via swift-bridge) that
+references `@rpath/libswift_Concurrency.dylib`. Three traps stacked on
+each other:
+
+1. **screencapturekit's own build.rs assumes full Xcode.** It computes
+   `$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib/...`.
+   On Command-Line-Tools-only machines (the default for most contributors),
+   `xcode-select -p` returns `/Library/Developer/CommandLineTools`, which
+   has no `Toolchains/` subdir, so the path is invalid and *no* rpath gets
+   baked. The binary fails to load with `dyld: Library not loaded …
+   (Reason: no LC_RPATH's found)`.
+
+2. **`cargo:rustc-link-arg` from a library doesn't propagate to dependent
+   binary crates.** Putting the rpath fix in `ak820-audio-reactive/build.rs`
+   alone leaves the CLI / Tauri binaries unaffected. Each binary crate that
+   transitively depends on `screencapturekit` needs its *own* build.rs.
+
+3. **Pointing rpath at the on-disk CLT/Xcode toolchain causes duplicate
+   loads on macOS 13+.** Apple frameworks (AVFoundation, CoreAudio, …)
+   reference `/usr/lib/swift/libswift_Concurrency.dylib`, which is a
+   dyld-shared-cache-only path (no file on disk). If our rpath additionally
+   points at the toolchain copy on disk, dyld loads *both* and you get
+   `objc[…]: Class _TtCs… is implemented in both …` warnings plus
+   warnings about "spurious casting failures and mysterious crashes".
+
+**The fix in `build.rs`:** on macOS 13+ emit exactly one rpath,
+`/usr/lib/swift` — that resolves to the same dyld-shared-cache library
+Apple frameworks load, so there's a single shared copy. Pre-13 hosts
+fall back to the toolchain path on disk. The build script lives in both
+`crates/ak820-audio-reactive/build.rs` (covers its own test binaries)
+and `crates/ak820-cli/build.rs` (covers the `ak820` binary). When we
+wire audio-reactive into the Tauri app, the same recipe needs to land
+in `src-tauri/build.rs` — Cargo doesn't share `rustc-link-arg` across
+the workspace.
+
 ### 6.9 Keymap action-page enum `O` values (mismatch landmine)
 The official enum is:
 `0 DEFAULT, 1 MOUSE, 2 KEYBOARD, 3 CONSUMER_KEY, 4 SYSTEM_KEY,`

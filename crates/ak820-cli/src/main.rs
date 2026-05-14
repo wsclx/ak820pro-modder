@@ -48,6 +48,12 @@ enum Cmd {
     /// TFT display upload (128×128 RGB565 frames; cmd 80 on the 0xFF67 endpoint)
     #[command(subcommand)]
     Tft(TftCmd),
+    /// Audio-reactive lighting smoke probe (macOS only). Doesn't touch
+    /// the keyboard yet — just streams band magnitudes from the system
+    /// audio mix to stdout so we can verify the capture + FFT pipeline.
+    #[cfg(target_os = "macos")]
+    #[command(subcommand)]
+    Audio(AudioCmd),
 }
 
 #[derive(Subcommand)]
@@ -76,6 +82,26 @@ enum TftCmd {
 enum MacrosCmd {
     /// List every macro stored on the device
     List,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Subcommand)]
+enum AudioCmd {
+    /// Tap the macOS system-audio mix, run the FFT pipeline, and print
+    /// bass / mids / highs magnitudes (0.0..=1.0) until interrupted.
+    ///
+    /// First run pops the Screen Recording TCC prompt — the parent app
+    /// (Terminal / iTerm) has to be approved once. After that, capture
+    /// starts silently. Play some music, hum into the mic, watch values.
+    Meter {
+        /// Stop after this many seconds. 0 = run forever (until Ctrl-C).
+        #[arg(long, default_value_t = 10)]
+        duration: u32,
+        /// Print rate, in Hz. The FFT runs as samples arrive; this just
+        /// throttles how often we render to stdout.
+        #[arg(long, default_value_t = 20)]
+        hz: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -163,6 +189,8 @@ fn main() -> Result<()> {
         Cmd::Tft(TftCmd::Solid { color }) => cmd_tft_solid(cli.json, &color),
         Cmd::Tft(TftCmd::Cycle { delay }) => cmd_tft_cycle(cli.json, delay),
         Cmd::Tft(TftCmd::SelectIndex { index }) => cmd_tft_select_index(cli.json, index),
+        #[cfg(target_os = "macos")]
+        Cmd::Audio(AudioCmd::Meter { duration, hz }) => cmd_audio_meter(cli.json, duration, hz),
         Cmd::Lighting(LightingCmd::Modes) => cmd_lighting_modes(cli.json),
         Cmd::Lighting(LightingCmd::Set {
             mode,
@@ -635,4 +663,113 @@ fn cmd_game_mode_set_sleep(json: bool, value: u8) -> Result<()> {
         println!("Sleep timer changed: {} → {}", prev, value);
     }
     Ok(())
+}
+
+/// Audio-reactive smoke probe — capture system audio, run the FFT
+/// pipeline, print band magnitudes. Doesn't touch the keyboard. Once
+/// the numbers look sensible we hook the same pipeline into the Tauri
+/// app and drive per-key RGB.
+#[cfg(target_os = "macos")]
+fn cmd_audio_meter(json: bool, duration: u32, hz: u32) -> Result<()> {
+    use ak820_audio_reactive::{Analyzer, Capture};
+    use std::time::{Duration, Instant};
+
+    if hz == 0 {
+        bail!("--hz must be > 0");
+    }
+
+    // Wraps SCStream + system-audio plumbing. Drop releases everything.
+    let capture = Capture::start().with_context(|| {
+        "failed to start SCStream — has the parent app been granted Screen Recording \
+         permission in System Settings → Privacy & Security?"
+    })?;
+    let mut analyzer = Analyzer::new(capture.sample_rate());
+
+    if !json {
+        eprintln!(
+            "[ak820 audio] streaming bands at {hz} Hz for {} — play music or speak",
+            if duration == 0 {
+                "ever (Ctrl-C to stop)".into()
+            } else {
+                format!("{duration}s")
+            }
+        );
+    }
+
+    // Rolling buffer of recent PCM. We feed the trailing FFT_LEN to the
+    // analyzer on each tick, so a short capture-callback gap doesn't
+    // make the meter flicker between zero and full-scale.
+    let buffer_target = ak820_audio_reactive::analyzer::FFT_LEN;
+    let mut pcm: Vec<f32> = Vec::with_capacity(buffer_target * 4);
+    let start = Instant::now();
+    let frame_period = Duration::from_secs_f32(1.0 / hz as f32);
+    let mut next_tick = Instant::now();
+
+    loop {
+        if duration > 0 && start.elapsed() >= Duration::from_secs(duration as u64) {
+            break;
+        }
+
+        // Drain anything the SCStream handler has queued. Each callback
+        // carries ~10ms of audio; this loop runs ~50× faster, so we
+        // either get nothing or one buffer.
+        while let Some(chunk) = capture.try_recv() {
+            pcm.extend_from_slice(&chunk);
+            if pcm.len() > buffer_target * 4 {
+                // Keep a window of recent samples only.
+                let drop = pcm.len() - buffer_target * 2;
+                pcm.drain(..drop);
+            }
+        }
+
+        let now = Instant::now();
+        if now >= next_tick && pcm.len() >= buffer_target {
+            let frame = analyzer.analyze(&pcm);
+            let ts = start.elapsed().as_secs_f32();
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "t": ts,
+                        "bass": frame.bass,
+                        "mids": frame.mids,
+                        "highs": frame.highs,
+                    })
+                );
+            } else {
+                println!(
+                    "{ts:6.2}s  bass {:>6.3}  mids {:>6.3}  highs {:>6.3}  {}",
+                    frame.bass,
+                    frame.mids,
+                    frame.highs,
+                    render_bars(frame.bass, frame.mids, frame.highs)
+                );
+            }
+            next_tick = now + frame_period;
+        }
+
+        std::thread::sleep(Duration::from_millis(2));
+    }
+
+    Ok(())
+}
+
+/// Tiny ASCII visualisation so a human reading the terminal can sanity-
+/// check that bass / mids / highs respond independently. Each band gets
+/// a 20-wide bar; max width = magnitude 1.0.
+#[cfg(target_os = "macos")]
+fn render_bars(bass: f32, mids: f32, highs: f32) -> String {
+    const WIDTH: usize = 20;
+    let bar = |v: f32| -> String {
+        let n = ((v.clamp(0.0, 1.0) * WIDTH as f32).round() as usize).min(WIDTH);
+        let mut s = String::with_capacity(WIDTH);
+        for _ in 0..n {
+            s.push('█');
+        }
+        for _ in n..WIDTH {
+            s.push('·');
+        }
+        s
+    };
+    format!("[{}] [{}] [{}]", bar(bass), bar(mids), bar(highs))
 }

@@ -1,0 +1,39 @@
+[package]
+name = "ak820-audio-reactive"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "macOS system-audio capture + FFT pipeline that drives the AK820 Pro per-key RGB grid"
+
+[lib]
+name = "ak820_audio_reactive"
+
+[features]
+# By default we ship only the analyzer (pure Rust). Consumers that need
+# system-audio capture turn on the `capture` feature, which pulls in
+# Apple's ScreenCaptureKit. Keeping it optional means `cargo test` on
+# this crate works without the Swift runtime libraries that
+# screencapturekit's static lib transitively depends on — tests would
+# otherwise fail to load `libswift_Concurrency.dylib` because the test
+# runner doesn't inherit the binary rpath that `cargo build --bin` gets.
+default = []
+capture = ["dep:screencapturekit"]
+
+[dependencies]
+# Pure-Rust FFT — works on every platform, no Apple deps. Tests stay
+# fast and self-contained.
+realfft = "3.5"
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Apple's ScreenCaptureKit — only API that delivers system-audio without
+# requiring a virtual audio device (BlackHole / Loopback). `macos_13_0`
+# toggles audio support; the audio-only API in macOS 15.2+ skips the
+# screen-recording prompt but needs an `SCContentSharingPicker` UI flow,
+# out of scope for the first cut. Optional so default builds + tests
+# don't link against the Swift runtime.
+screencapturekit = { version = "2.1", features = ["macos_13_0"], optional = true }

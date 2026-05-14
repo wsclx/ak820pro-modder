@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/ak820-protocol",
     "crates/ak820-cli",
+    "crates/ak820-audio-reactive",
     "src-tauri",
 ]
 
