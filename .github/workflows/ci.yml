@@ -25,6 +25,24 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
 
+      # The Tauri shell's `generate_context!()` proc-macro reads tauri.conf.json
+      # at compile time and verifies `frontendDist` actually exists. So we have
+      # to build the frontend before clippy / test even though this is "the
+      # Rust job" — otherwise compilation panics with "this path doesn't exist".
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Build frontend (populates dist/ for tauri::generate_context!)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
       - name: cargo fmt
         run: cargo fmt --all -- --check
 
