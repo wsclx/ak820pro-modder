@@ -481,36 +481,134 @@ function KeyboardSurface({
 
 interface CapStyle {
   width: number;
+  /** Vertical extent of the cap. Default 42 (= 1 u); ISO Enter is 88 (= 2 u). */
   height: number;
   flexGrow?: number;
   marginLeft?: number | "auto";
   marginRight?: number;
   marginTop?: number;
+  /**
+   * Negative bottom margin used by 2 u-tall keys (ISO Enter) so the flex
+   * row's height stays anchored to the normal 1 u cap height. Without
+   * this the row becomes 88 px tall and the next row gets pushed way down.
+   */
+  marginBottom?: number;
+  /**
+   * CSS clip-path expression. Used to carve the L-shape notch out of the
+   * ISO Enter. `undefined` for every other cap.
+   */
+  clipPath?: string;
 }
 
+/** Base unit width — one 1 u cap. Keep this synced with `gap-1` (4 px). */
+const CELL_W = 38;
+const CELL_H = 42;
+
+/**
+ * Pull width / height / margin / clip-path hints out of the cls string a
+ * layout file ships with. Hint syntax mirrors Tailwind's `w-N`/`h-N`/`mt-N`
+ * convention, mapping each unit to a 1 u multiplier so a layout author can
+ * say `w-22` for "2.25 u wide" and get the same visual no matter what the
+ * other widths are.
+ *
+ * Special parsing:
+ * * `w-N`, `h-N` — width / height of the cap in `N/15 × 1 u` units.
+ *   That weird denominator preserves the legacy `w-18 = 52 px` mapping
+ *   (1 u = 38, 1.4 u ≈ 52). Examples:
+ *     - `w-15` = 1 u ≈ 42 px (slim filler)
+ *     - `w-18` = 1.4 u ≈ 52 px (ISO Enter top, ANSI extra)
+ *     - `w-22` = 1.6 u ≈ 86 px (ANSI 2 u keys)
+ *     - `w-24` = 1.6 u ≈ 62 px (Tab)
+ *     - `w-27` = 1.85 u ≈ 70 px (Caps)
+ *     - `w-30` = 2.05 u ≈ 100 px (ANSI wide L-Shift / "Right Alt + Win")
+ *     - `h-30` = 2 u = 88 px (ISO Enter L-shape upper portion)
+ * * `mt--N` — negative `margin-top: -N`. Layout files use this on the
+ *   home row to butt the caps against the previous row for a denser look.
+ * * `flex-1` — stretch to fill remaining row space. Used for Spacebar
+ *   and for ANSI's flat Enter.
+ *
+ * If a key carries `h-30` we also set a negative `marginBottom` equal to
+ * `extraHeight` so its 2 u presence doesn't inflate the flex row's box.
+ * Visually the cap overflows down into the next row's gutter — exactly
+ * what an L-shape Enter is.
+ */
 function capStyleFor(cls: string | undefined, label: string, isLastInRow: boolean): CapStyle {
   const c = cls ?? "";
-  const flexGrow = c.includes("flex-1") && label === "Spacebar" ? 1 : undefined;
-  const width = c.includes("w-27") ? 70
-    : c.includes("w-24") ? 62
-    : c.includes("w-18") ? 52
-    : c.includes("w-15") ? 42
-    : c.includes("flex-1") && label !== "Spacebar" ? 78
-    : 38;
-  const height = 42;
+  const flexGrow =
+    c.includes("flex-1") && (label === "Spacebar" || label === "Espace" || label === "Espacio")
+      ? 1
+      : undefined;
 
+  // Width: prefer explicit w-N hints; fall back to label-based heuristics
+  // for keys that don't carry a width hint (most 1 u letters).
+  const widthMap: Record<string, number> = {
+    "w-15": 42,
+    "w-18": 52,
+    "w-22": 80, // ANSI L-Shift (= 1 u L-Shift + 1 u ISO `<>` + the 4 px gap)
+    "w-24": 62,
+    "w-27": 70,
+    "w-30": 100, // reserved for future wider caps
+  };
+  let width = CELL_W;
+  for (const [key, px] of Object.entries(widthMap)) {
+    if (c.includes(key)) {
+      width = px;
+      break;
+    }
+  }
+  if (width === CELL_W && c.includes("flex-1") && label !== "Spacebar") {
+    // Used by Backspace (`Back` / `Retroceso` / `Retour`) which has no
+    // explicit w-N hint but should fill a bit more than 1 u.
+    width = 78;
+  }
+
+  // Height: only special case is the 2 u-tall ISO Enter (h-30 hint).
+  const height = c.includes("h-30") ? 88 : CELL_H;
+  const marginBottom = height > CELL_H ? -(height - CELL_H) : undefined;
+
+  // Horizontal margins. Auto-margins on Function-row keys add visual
+  // separation between F-key clusters; ml-5 nudges the cluster of arrow
+  // keys away from the modifier row's right end.
   let marginLeft: CapStyle["marginLeft"];
   if (c.includes("ml-auto") && /^F\d/.test(label)) marginLeft = 10;
   else if (c.includes("ml-auto")) marginLeft = undefined;
   if (c.includes("ml-5")) marginLeft = 14;
-  if (label === "Entf") marginLeft = 10;
+  // The Delete / Entf / Suppr cap sits visually separated from F12.
+  if (/^(Entf|Del|Suppr|Supr)$/.test(label)) marginLeft = 10;
   if (isLastInRow && label === "↑") marginLeft = "auto";
 
   let marginRight: number | undefined;
   if (label === "↑") marginRight = 42;
   if (c.includes("mr-3")) marginRight = 8;
+  if (c.includes("mr-15")) marginRight = undefined; // currently render flat
 
-  return { width, height, flexGrow, marginLeft, marginRight, marginTop: undefined };
+  // `mt--N` is a Tailwind-style negative top margin used by the iso-de
+  // home row to tighten the gap above it. We honour it but cap the
+  // overlap at 4 px — the original hint said 15 which pushed row 3
+  // *into* row 2 visually, and that breaks the ISO Enter alignment
+  // (Enter's bottom edge has to mate with row 3's bottom edge for the
+  // L-shape to read correctly).
+  let marginTop: number | undefined;
+  const mtMatch = c.match(/mt-{1,2}(\d+)/);
+  if (mtMatch) {
+    const isNegative = c.includes("mt--");
+    const raw = Number(mtMatch[1]);
+    if (Number.isFinite(raw)) {
+      marginTop = isNegative ? -Math.min(raw, 4) : raw;
+    }
+  }
+
+  // ISO Enter (h-30) gets a clip-path that carves the L-shape notch from
+  // its top-left, so it visually mates with the `+` cap above the home
+  // row. Without the clip-path it just looks like a tall rectangle.
+  // The notch eats 28 % of the width × 50 % of the height — slightly
+  // less than the 30 % a real ISO Enter has, because our cap padding
+  // pulls labels toward the right side of the visible region.
+  const clipPath = c.includes("h-30")
+    ? "polygon(28% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 50%, 28% 50%)"
+    : undefined;
+
+  return { width, height, flexGrow, marginLeft, marginRight, marginTop, marginBottom, clipPath };
 }
 
 interface LabelParts { primary: string; alt?: string }
@@ -572,6 +670,17 @@ function Cap({
         height: `${s.height}px`,
         marginLeft: s.marginLeft,
         marginRight: s.marginRight,
+        marginTop: s.marginTop,
+        // 2 u-tall keys (ISO Enter) overflow downward into the next row
+        // visually but keep the flex row's logical height at 1 u.
+        marginBottom: s.marginBottom,
+        // L-shape notch for ISO Enter. `undefined` collapses the property
+        // for every other key so they still get rounded corners.
+        clipPath: s.clipPath,
+        // Without this, a clipped cap with no z-index can be rendered
+        // beneath later-painted row keys at the overlap region.
+        zIndex: s.height > CELL_H ? 2 : undefined,
+        position: s.height > CELL_H ? "relative" : undefined,
       }}
     >
       <span className="relative flex flex-1 flex-col items-center justify-center px-1.5 leading-none">
