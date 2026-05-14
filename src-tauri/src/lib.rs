@@ -310,11 +310,25 @@ pub fn run() {
         ])
         .setup(|app| {
             use tauri::Manager;
-            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder};
+            use tauri::menu::{AboutMetadataBuilder, Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder};
+
+            // About-dialog payload: version, copyright, "by wsclx" attribution,
+            // and a homepage link so users discover the GitHub repo.
+            let about_meta = AboutMetadataBuilder::new()
+                .name(Some("AK820 Pro Modder"))
+                .version(Some(env!("CARGO_PKG_VERSION")))
+                .copyright(Some("Copyright (c) 2026 wsclx · MIT licensed"))
+                .authors(Some(vec!["wsclx".to_string()]))
+                .website(Some("https://github.com/wsclx/ak820pro-modder"))
+                .website_label(Some("github.com/wsclx/ak820pro-modder"))
+                .comments(Some(
+                    "Open-source, macOS-first control software for the Epomaker / Ajazz AK820 Pro mechanical keyboard.",
+                ))
+                .build();
 
             // Native macOS-style menu with the shortcuts users expect.
-            let app_menu = SubmenuBuilder::new(app, "AK820 Pro")
-                .item(&PredefinedMenuItem::about(app, None, None)?)
+            let app_menu = SubmenuBuilder::new(app, "AK820 Pro Modder")
+                .item(&PredefinedMenuItem::about(app, Some("About AK820 Pro Modder"), Some(about_meta))?)
                 .separator()
                 .item(&PredefinedMenuItem::hide(app, None)?)
                 .item(&PredefinedMenuItem::hide_others(app, None)?)

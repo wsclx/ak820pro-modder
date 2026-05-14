@@ -7,11 +7,13 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.5.0-beta"
 edition = "2021"
-authors = ["Mario Lohe <mariolohe@gmail.com>"]
+authors = ["wsclx"]
 license = "MIT"
-repository = "https://github.com/mariolohe/ak820pro"
+repository = "https://github.com/wsclx/ak820pro-modder"
+homepage = "https://github.com/wsclx/ak820pro-modder"
+description = "Open-source macOS-first control software for the Epomaker / Ajazz AK820 Pro mechanical keyboard"
 rust-version = "1.82"
 
 [workspace.dependencies]

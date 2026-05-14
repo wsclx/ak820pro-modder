@@ -1,59 +1,189 @@
-# AK820 Pro
+<div align="center">
 
-macOS-first, open-source control software for the **Epomaker / Ajazz AK820 Pro** mechanical keyboard.
+# AK820 Pro Modder
 
-The official Epomaker driver is Windows-only and limited. This project replaces it with a clean cross-platform Tauri app plus a headless CLI, built on a shared Rust protocol library.
+**Open-source, macOS-first control software for the Epomaker / Ajazz AK820 Pro mechanical keyboard.**
+
+A clean replacement for the Windows-only AJAZZ tool — native, transparent, scriptable.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](#status)
+[![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)](https://tauri.app)
+[![Rust](https://img.shields.io/badge/rust-1.82%2B-orange)](https://www.rust-lang.org)
+[![Made for macOS](https://img.shields.io/badge/macOS-11%2B-black)](#install)
+
+</div>
+
+---
+
+## Why
+
+The official Epomaker / Ajazz driver is Windows-only and limited. macOS users get nothing — no lighting tweaks, no key remapping, no macros, no TFT customisation. This project changes that, by reverse-engineering the wire protocol against the official online driver and re-implementing the full feature surface in a clean, native, scriptable stack.
+
+| | Official AJAZZ tool | **AK820 Pro Modder** |
+|---|---|---|
+| macOS support | ❌ Windows only | ✅ Native, signed-build target |
+| CLI / scripting | ❌ | ✅ `ak820` headless binary |
+| Transparent protocol | ❌ closed | ✅ [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — every byte documented |
+| 20 lighting modes | ✅ | ✅ |
+| Per-key RGB | ✅ | ✅ wire-level (UI in progress) |
+| Keymap remap | ✅ | ✅ base + Fn layer |
+| Macro recorder | ✅ | ✅ live capture in the app |
+| TFT image upload | ✅ | 🚧 wire-format decoded, visibility verification in progress |
+| Audio-reactive lighting | ❌ | 🛣 planned (macOS ScreenCaptureKit) |
+| Now-playing on TFT | ❌ | 🛣 planned (MediaRemote bridge) |
+| Profile sync across machines | ❌ | 🛣 planned (iCloud Drive) |
+| AppleScript / Shortcuts bridge | ❌ | 🛣 planned |
+| Open source | ❌ | ✅ MIT |
 
 ## Status
 
-Phase 0 (Foundation). Device enumeration and a placeholder probe handshake. See [the implementation plan](../.claude/plans/ich-habe-mir-die-inherited-glacier.md) for the full roadmap.
+**Version 0.5.0-beta.** Lighting, keymap, macros, system info are hardware-verified on the AK820 Pro running firmware 1.07 (ISO-DE layout). Per-key RGB and TFT upload are protocol-complete and ship a CLI smoke test; full UI for both is in active development. See the [Roadmap](#roadmap) section for details.
+
+> ⚠️ Beta software. Read-only paths are safe; write paths have been used extensively on a single physical device without bricking, but there are no warranties. The keyboard's hidden bootloader (under the spacebar, see hardware notes) is your rescue path if anything ever goes sideways.
+
+## Quick start
+
+### Install (macOS, build from source for now)
+
+```bash
+# Prerequisites: Rust 1.82+, Node.js 20+, pnpm
+git clone https://github.com/wsclx/ak820pro-modder.git
+cd ak820pro-modder
+pnpm install
+pnpm tauri:build
+open src-tauri/target/release/bundle/dmg/*.dmg
+```
+
+Drag **AK820 Pro Modder.app** into Applications and launch.
+
+Signed `.dmg` releases will land on the [Releases](https://github.com/wsclx/ak820pro-modder/releases) page once the codesigning pipeline is wired up.
+
+### CLI usage
+
+```bash
+cargo build -p ak820-cli --release
+./target/release/ak820 list                  # enumerate every HID interface
+./target/release/ak820 probe                 # open control endpoint, sanity check
+./target/release/ak820 info                  # firmware + battery + profile
+./target/release/ak820 lighting set --mode static --color FF00AA
+./target/release/ak820 rgb fill --color 00FF80   # per-key static colour
+./target/release/ak820 rgb rainbow               # 128-LED rainbow gradient
+./target/release/ak820 macros list           # dump every stored macro
+./target/release/ak820 hid-descriptors       # debug: report sizes per interface
+```
+
+Full CLI help is `ak820 --help`.
+
+## Features
+
+### Lighting
+- All 20 effect modes from the official driver (static, breathing, spectrum, ripples, flowing, …)
+- RGB picker with HSL preview
+- Dual-tone secondary colour for the modes that support it
+- Brightness + speed 0–5
+- Direction (left / right / up / down) where the mode honours it
+- Live apply with debounce; toggle to manual mode for slower-feedback tweaks
+
+### Keymap & layers
+- Visual ISO-DE keyboard surface, resizable via window drag (CSS `transform: scale()` for pixel-perfect re-render)
+- Click any key → pick a new action → save writes both base + Fn layers atomically
+- 128 slots, every keystroke type covered: HID keyboard, consumer (media), mouse, layer toggle, macro trigger, raw-passthrough for unknown classes
+- Heads-up warning when remapping F-row keys in macOS-mode (the firmware preempts those with media keys on the physical Mac/Win switch)
+
+### Macros
+- Record macros directly in the app — every browser `keydown` / `keyup` becomes a wire event with millisecond delays
+- Up to 100 slots × 320 bytes (~79 actions per macro)
+- Two-phase atomic commit so a partial write can't leave the keyboard in a weird state
+- Assignable to any key from the **Macros** action group in the keymap picker
+
+### System
+- Firmware version + battery level + charge state + active profile slot
+- Sleep-timer presets (never / 1m / 5m / 10m / 15m / 30m)
+- Live device info read-back after every write to confirm the keyboard actually accepted what we sent
+
+### Coming next
+See the [Roadmap](#roadmap) section and the [`docs/HANDOFF.md`](docs/HANDOFF.md) file for the engineering trail.
 
 ## Architecture
 
 ```
-crates/
-  ak820-protocol/     Rust library — HID transport, command encoders/decoders
-  ak820-cli/          Headless `ak820` binary
-src-tauri/            Tauri 2 shell — exposes protocol commands to the UI
-src/                  React 19 + TypeScript + Tailwind frontend
-docs/PROTOCOL.md      Living byte-level documentation of the wire protocol
+ak820pro-modder/
+├── crates/
+│   ├── ak820-protocol/      Pure-Rust library — HID framing, command encoders/decoders
+│   │   └── src/commands/    One module per feature family (lighting, keymap, macros, …)
+│   └── ak820-cli/           `ak820` headless binary (scripting + RE / smoke tests)
+├── src-tauri/               Tauri 2 shell — async commands marshal between UI and protocol crate
+├── src/                     React 19 + TypeScript + Tailwind 3 frontend
+│   ├── views/               One file per top-level tab (Connect, Lighting, Keymap, Macros, …)
+│   ├── components/          Shared UI primitives (Card, Button, Slider, …)
+│   └── data/                Static layout descriptors + curated action catalogues
+├── docs/
+│   ├── PROTOCOL.md          Living byte-level wire documentation
+│   ├── ARCHITECTURE.md      High-level design + tech stack rationale
+│   ├── HANDOFF.md           Engineering handoff: foot-guns, decisions, debug trail
+│   └── reverse-engineering/ Scraped vendor bundles + USB pcap captures (gitignored)
+└── tests/                   Hardware-in-the-loop fixtures (gitignored)
 ```
 
-## Hardware (for reference)
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains why Tauri + Rust over Electron / PyQt / WebHID.
 
-- **MCU**: HFD80CP100 (Sonix SN32F299 clone), 6×15 key matrix
-- **Wireless**: WCH CH582F (BLE 5.1 + 2.4 GHz)
-- **Flash**: PY25Q128HA 16 MB SPI
-- **Display**: 0.85" NFP085B-10AF, 128×128, GC9107 over SPI
-- **Operating VID**: `0x8009` (Ajazz SONiX) · control on HID interface 3
-- **Bootloader VID/PID**: `0x0C45 / 0x7140` (hidden pins under spacebar)
+## Hardware reference
 
-## Build
+| Component | Part | Notes |
+|---|---|---|
+| Main MCU | HFD80CP100 (Sonix SN32F299 clone) | 6 × 15 key matrix |
+| Wireless | WCH CH582F | BLE 5.1 + 2.4 GHz, I²C to MCU |
+| Flash | PY25Q128HA | 16 MB SPI — firmware + configs + GIF frames |
+| Display | NFP085B-10AF, 0.85″ 128 × 128 | GC9107 controller, SPI |
+| Bootloader | Hidden pins under spacebar | ISP-mode VID/PID `0x0C45 / 0x7140` |
+| Operating VID/PID | `0x0C45 / 0x8009` (wired + 2.4 GHz) | `0xFEFE` for BT, control on HID interface 2 (`usage_page 0xFF68`) |
 
-```bash
-# Frontend deps
-pnpm install
+Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hardware-doc project for the early MCU / wireless / flash identification — see [Acknowledgements](#acknowledgements).
 
-# Headless CLI
-cargo build -p ak820-cli --release
-./target/release/ak820 list
-./target/release/ak820 probe
+## Roadmap
 
-# Tauri app (dev)
-pnpm tauri:dev
+| Phase | Status | Description |
+|---|---|---|
+| 0 — Foundation | ✅ | Tauri shell, workspace, HID transport, probe handshake |
+| 1 — Lighting | ✅ | 20 modes + secondary colour + brightness / speed / direction |
+| 2 — System | ✅ | Device info, battery, sleep timer, profile, game-mode |
+| 3 — Keymap | ✅ | Base + Fn layer editor, visual ISO-DE surface, 128-slot round-trip |
+| 4 — Macros | ✅ | Recorder, editor, ActionCatalog integration, hardware-verified |
+| 5a — Per-key RGB | 🟡 | Protocol + CLI verified; UI in progress |
+| 5b — TFT display | 🟡 | Protocol + CLI upload verified at wire level; visibility flip pending USB pcap |
+| 6 — Power features | 🛣 | Audio-reactive RGB (ScreenCaptureKit), now-playing on TFT (MediaRemote), AppleScript bridge, iCloud profile sync |
+| 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
 
-# Tauri app (release bundle)
-pnpm tauri:build
-```
+## Contributing
 
-## Credits
+This is an open project. We need:
 
-Protocol RE builds on prior community work:
+- 🧪 **Hardware testers** — different AK820 Pro firmware versions / variants (ANSI, ISO-DE, ISO-UK, …).
+- 🕵️ **Reverse engineers** — USB pcap captures of the official Windows tool doing specific actions (especially TFT upload and the per-key RGB enable path).
+- 🦀 **Rust developers** — protocol modules, error handling, additional decoders.
+- ⚛️ **Frontend developers** — UI for TFT image upload, per-key RGB paint mode, audio-reactive visualisation.
+- 📝 **Docs writers** — better install instructions per platform.
 
-- [gohv/EPOMAKER-Ajazz-AK820-Pro](https://github.com/gohv/EPOMAKER-Ajazz-AK820-Pro) (MIT) — Rust reference for lighting / sleep / clock
-- [TaxMachine/ajazz-keyboard-software-linux](https://github.com/TaxMachine/ajazz-keyboard-software-linux) — C++ reference and pcap-parsing approach
-- [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) — hardware reverse-engineering notes
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR. Issues are open — see the [issue templates](.github/ISSUE_TEMPLATE) for the kind of structured info that makes a bug report or protocol finding actually actionable.
+
+By contributing you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Hardware control surfaces are inherently risky. Read [`SECURITY.md`](SECURITY.md) for our disclosure policy and the rescue procedures (ISP bootloader, factory reset over HID).
+
+## Acknowledgements
+
+- [@gohv](https://github.com/gohv) — [EPOMAKER-Ajazz-AK820-Pro](https://github.com/gohv/EPOMAKER-Ajazz-AK820-Pro) for the original Linux Rust port. Inspired this project's architecture; its lighting findings turned out to be wrong on macOS (the official online driver uses a different wire format) but the encoder skeleton was a useful starting point.
+- [@TaxMachine](https://github.com/TaxMachine) — [ajazz-keyboard-software-linux](https://github.com/TaxMachine/ajazz-keyboard-software-linux) for the C++ pcap-parser approach and continued protocol RE.
+- [@fpb](https://github.com/fpb) — [ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) for hardware identification (MCU, wireless chip, flash, display).
+- The [SonixQMK](https://github.com/SonixQMK) project — keeping a path open to eventual QMK firmware support for the SN32F299 family.
 
 ## License
 
-MIT.
+[MIT](LICENSE) © wsclx
+
+---
+
+<sub>v0.5.0-beta · made with ❤️ for the macOS mechanical-keyboard community · open issues / PRs at [github.com/wsclx/ak820pro-modder](https://github.com/wsclx/ak820pro-modder)</sub>

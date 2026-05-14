@@ -1,5 +1,6 @@
 import type { PropsWithChildren, ReactNode } from "react";
 import { BatteryBar, prettyProduct } from "./ui";
+import { APP_CREDIT, APP_HOMEPAGE } from "../version";
 
 export interface NavItem<T extends string> {
   id: T;
@@ -112,6 +113,17 @@ export function Layout<T extends string>({
           {connection?.connected && battery && (
             <BatteryBar level={battery.level} charging={battery.charging} compact />
           )}
+          <div className="mt-3 border-t border-line/60 pt-2.5">
+            <a
+              href={APP_HOMEPAGE}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-[10px] leading-tight text-fg-3 transition-colors hover:text-fg-1"
+              title="Open the project on GitHub"
+            >
+              {APP_CREDIT}
+            </a>
+          </div>
         </footer>
       </aside>
 

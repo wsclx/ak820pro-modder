@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AK820 Pro",
-  "version": "0.1.0",
-  "identifier": "com.mariolohe.ak820pro",
+  "productName": "AK820 Pro Modder",
+  "version": "0.5.0-beta",
+  "identifier": "io.github.wsclx.ak820pro-modder",
   "build": {
     "beforeDevCommand": "pnpm build",
     "beforeBuildCommand": "pnpm build",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "AK820 Pro",
+        "title": "AK820 Pro Modder",
         "width": 1180,
         "height": 760,
         "minWidth": 960,
@@ -28,8 +28,10 @@
   "bundle": {
     "active": true,
     "category": "Utility",
-    "shortDescription": "Control software for the Epomaker / Ajazz AK820 Pro",
-    "longDescription": "Open-source, macOS-first configuration tool for the Epomaker / Ajazz AK820 Pro keyboard. Lighting, keymap, macros, TFT display, and more.",
+    "shortDescription": "Open-source control software for the Epomaker / Ajazz AK820 Pro keyboard",
+    "longDescription": "AK820 Pro Modder is a clean, macOS-first replacement for the official Windows-only Epomaker / Ajazz tool. Manage lighting, remap any key, record macros, paint per-key RGB, and upload TFT animations — all via a native Tauri shell over a reverse-engineered HID protocol.",
+    "publisher": "wsclx",
+    "copyright": "Copyright (c) 2026 wsclx. Licensed under MIT.",
     "targets": "all",
     "icon": [
       "icons/32x32.png",

@@ -23,7 +23,7 @@ profile sync.
 
 | Field | Value | Source |
 |---|---|---|
-| Product | AK820 Pro (Mario's unit: ISO-DE, firmware **1.07**) | device GET_DEVICE_INFO |
+| Product | AK820 Pro (test unit: ISO-DE, firmware **1.07**) | device GET_DEVICE_INFO |
 | MCU | **HFD80CP100** (Sonix SN32F299 clone), 6×15 key matrix | fpb/ajazz-ak820-pro |
 | Wireless | WCH **CH582F** (BLE 5.1 + 2.4 GHz, I²C-attached) | same |
 | Flash | PY25Q128HA 16 MB SPI | same |
@@ -191,7 +191,7 @@ packet flag).
 │   ├── ARCHITECTURE.md             <- layered breakdown
 │   ├── PROTOCOL.md                 <- byte-level protocol reference
 │   └── reverse-engineering/
-│       ├── official-export-firmware-1.07.json   <- Mario's profile export
+│       ├── official-export-firmware-1.07.json   <- profile export from the test unit
 │       └── online-driver/
 │           └── default-protocol.js  <- the AJAZZ driver source, snapshotted
 ├── crates/
@@ -261,7 +261,7 @@ packet flag).
 
 | Phase | Status | What works | Notes |
 |---|---|---|---|
-| 0 — Foundation | ✅ done | Tauri 2 app, workspace, CLI, device probe | live-validated on Mario's keyboard |
+| 0 — Foundation | ✅ done | Tauri 2 app, workspace, CLI, device probe | live-validated on test hardware |
 | RE — Decode wire format | ✅ done | All command bytes, frame layout, encoders/decoders | from online-driver source |
 | 1 — Lighting | ✅ done | 20 modes, color, secondary, direction, brightness/speed, debounced auto-apply | LEDs visibly respond on hardware |
 | 2 — System | ✅ done | Firmware, battery, profile, macro space, frame version, sleep-timer set+verify | full round-trip |
@@ -503,20 +503,20 @@ All errors come back serde-tagged as
   `GET_DEVICE_INFO` / `GET_DEVICE_NOTIFY` (250).
 - Backend hardening: `tokio::sync::Mutex` + async commands so future
   parallel invocations never deadlock the runtime.
-- Better Lighting color accuracy (Mario noted picker ≠ LED tone —
-  could be HW gamma or it could be the firmware's color-mode handling;
-  worth deeper RE).
+- Better Lighting color accuracy (the picker doesn't quite match the
+  rendered LED tone — could be HW gamma or the firmware's color-mode
+  handling; worth deeper RE).
 
 ---
 
-## 10. Memory Files (across sessions)
+## 10. About this document
 
-Always check these before assuming you have to re-learn something:
+This is the **engineering handoff** — a long-form, foot-gun-annotated
+trail through every non-obvious decision made building this project.
+It's intentionally chattier than the public README and ARCHITECTURE
+docs. Treat it as required reading before doing anything to the wire
+protocol or to the Tauri shell's state-management layer.
 
-- `~/.claude/projects/-Users-mario-DEV-ak820pro/memory/MEMORY.md`
-- `~/.claude/projects/-Users-mario-DEV-ak820pro/memory/feedback_*.md`
-- `~/SecondBrain/9-agents/claude/code/` (instance-specific notes)
-
-Current entries cover: subagent prompt-too-long blocker, Tauri+Vite
-dev-server failure mode, AK820 protocol RE pivot, std::Mutex deadlock,
-Tauri 2 menu wiring.
+If you find something in here that's wrong, or a foot-gun we haven't
+documented yet, open a PR. Future contributors will thank you for
+saving them the half-day of debugging.

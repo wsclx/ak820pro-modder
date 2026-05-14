@@ -1,0 +1,87 @@
+name: 🐛 Bug report
+description: Something doesn't work as advertised — UI freeze, wrong behaviour, write that didn't take, etc.
+title: "[bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. The more concrete the report, the faster we can reproduce — please run **`ak820 info`** and paste the output if you can.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: One-paragraph summary plus the exact steps to reproduce.
+      placeholder: |
+        Steps:
+        1. Open the app
+        2. Click "Keymap & Knob"
+        3. App freezes; have to force-quit
+
+        Expected: the Keymap view loads.
+        Actual: window goes white, beachball, must force-quit.
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      description: From the About dialog or sidebar footer.
+      placeholder: "0.5.0-beta"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install?
+      options:
+        - Pre-built .dmg from the Releases page
+        - Built from source (`pnpm tauri:build`)
+        - CLI only (`cargo build -p ak820-cli`)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS + version
+      placeholder: "macOS 14.5 (Sonoma) on M3 Pro"
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Keyboard firmware
+      description: Run `ak820 info` and copy the firmware line. Helps us know whether you're on the same wire-protocol revision we tested.
+      placeholder: "v1.07 — VID 0x0c45, PID 0x8009"
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How is the keyboard connected?
+      options:
+        - USB-C (wired)
+        - 2.4 GHz dongle
+        - Bluetooth
+        - Not sure
+
+  - type: dropdown
+    id: switch
+    attributes:
+      label: Hardware Mac / Win switch (back of the keyboard)
+      options:
+        - Mac
+        - Win
+        - Not applicable
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        From a terminal: `RUST_LOG=ak820_protocol=trace pnpm tauri:dev` and paste the relevant chunk around the failure. For CLI bugs: prefix the command with `RUST_LOG=trace`. Long logs are fine — paste them, we'll skim.
+      render: shell

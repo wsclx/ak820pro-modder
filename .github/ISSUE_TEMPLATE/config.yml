@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Question / Discussion
+    url: https://github.com/wsclx/ak820pro-modder/discussions
+    about: Got a question that isn't quite a bug or a feature request? Start a Discussion.
+  - name: 🔐 Security report
+    url: https://github.com/wsclx/ak820pro-modder/security/advisories/new
+    about: For anything that could brick the keyboard or escalate privileges. Please don't post these as public issues.

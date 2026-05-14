@@ -1,0 +1,60 @@
+name: ✨ Feature request
+description: Suggest a new feature, refactor, or workflow improvement.
+title: "[feature] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Quick framing keeps these tractable — say what you want and why before how.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's the user-facing pain? Skip the proposed solution for now.
+      placeholder: "When I have 50 macros, the list is unscrollable and hard to navigate."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How would the ideal version of the app behave? Sketches / mock-ups welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about and why they're worse.
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Which phase / area does this touch?
+      multiple: true
+      options:
+        - Lighting
+        - System / device info
+        - Keymap
+        - Macros
+        - Per-key RGB
+        - TFT display
+        - Power features (audio-reactive, now-playing, AppleScript)
+        - Cross-platform builds
+        - Documentation
+        - Build / CI
+        - Other
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Are you willing to help build this?
+      options:
+        - label: I can write the code
+        - label: I can help test on hardware
+        - label: I can help with documentation
+        - label: I'm just suggesting

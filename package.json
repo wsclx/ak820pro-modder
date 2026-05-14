@@ -1,7 +1,19 @@
 {
-  "name": "ak820pro",
+  "name": "ak820pro-modder",
+  "productName": "AK820 Pro Modder",
+  "description": "Open-source macOS-first control software for the Epomaker / Ajazz AK820 Pro mechanical keyboard",
+  "version": "0.5.0-beta",
+  "license": "MIT",
+  "author": "wsclx",
+  "homepage": "https://github.com/wsclx/ak820pro-modder",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wsclx/ak820pro-modder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wsclx/ak820pro-modder/issues"
+  },
   "private": true,
-  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

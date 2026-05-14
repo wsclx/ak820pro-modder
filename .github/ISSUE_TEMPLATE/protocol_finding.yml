@@ -1,0 +1,79 @@
+name: 🕵️ Protocol finding
+description: You've decoded a new command, captured a pcap, or proven a hypothesis about the wire format.
+title: "[protocol] "
+labels: ["protocol-re", "documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Protocol findings are gold — they let us extend the app without trial-and-error. Use this template when you've got USB pcap evidence or a clear AJAZZ JS-source reference.
+
+  - type: input
+    id: command
+    attributes:
+      label: Command name / number
+      description: From `docs/PROTOCOL.md` or your own naming if it's new.
+      placeholder: "GET_LIGHT_BOX (cmd 27 / 0x1B)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: status
+    attributes:
+      label: What's the status of this finding?
+      options:
+        - Wire layout fully decoded (encoder + decoder ready)
+        - Wire layout decoded but not yet implemented
+        - Partial decode — some bytes still unknown
+        - Hypothesis, needs more captures to confirm
+    validations:
+      required: true
+
+  - type: textarea
+    id: layout
+    attributes:
+      label: Byte layout
+      description: Describe the request and response frame layouts, including every byte you've decoded.
+      placeholder: |
+        Request (64 bytes):
+          0     0xAA   magic
+          1     0x1B   GET_LIGHT_BOX
+          2     0x18   content size (24 bytes expected)
+          3-4   0x0000 addr
+          ...
+
+        Response (64 bytes):
+          0     0x55   response magic
+          1     0x1B   echoed cmd
+          ...
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        - Link to a USB pcap (attach the file too — `docs/reverse-engineering/captures/` is gitignored so attach it to the issue directly).
+        - Or paste the exact AJAZZ JS source reference (chunk name + offset).
+        - Or a reproducible hex sequence from `RUST_LOG=trace` output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: What's still unknown? Which bytes haven't you decoded? Where does the firmware behaviour differ from what the JS source suggests?
+
+  - type: checkboxes
+    id: next
+    attributes:
+      label: What's needed next?
+      options:
+        - label: Rust encoder / decoder in `crates/ak820-protocol/src/commands/<family>.rs`
+        - label: Tauri IPC command + frontend wiring
+        - label: CLI subcommand for hardware-in-the-loop verification
+        - label: Update to `docs/PROTOCOL.md`
+        - label: Unit tests with hex fixtures
