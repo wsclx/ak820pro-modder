@@ -15,9 +15,11 @@ use tracing_subscriber::EnvFilter;
 
 mod automations;
 mod now_playing;
+mod presets;
 mod starter_library;
 use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
+use presets::Preset;
 use starter_library::StarterAutomation;
 
 /// HID codes F13..F24 reserved as global-shortcut markers for automations.
@@ -555,6 +557,156 @@ fn get_starter_library() -> Vec<StarterAutomation> {
     starter_library::library()
 }
 
+/// Curated cross-cutting presets (lighting + keymap overrides + automation
+/// seeds) for common use-cases. Returns every preset with its full payload
+/// so the UI can render a preview without an extra round-trip.
+#[tauri::command]
+fn list_presets() -> Vec<Preset> {
+    presets::library()
+}
+
+/// Which parts of a preset to apply. Lets the user pick — e.g. take only
+/// the lighting from "Gaming FPS" but keep their custom keymap.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ApplyPresetOptions {
+    pub lighting: bool,
+    pub keymap: bool,
+    pub fn_keymap: bool,
+    pub automations: bool,
+}
+
+/// Result of an apply — what actually happened, surfaced to the UI.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ApplyPresetReport {
+    pub lighting_applied: bool,
+    pub keymap_slots_changed: usize,
+    pub fn_keymap_slots_changed: usize,
+    pub automations_added: usize,
+    pub automations_skipped_existing: usize,
+    pub warnings: Vec<String>,
+}
+
+#[tauri::command]
+async fn apply_preset(
+    app: AppHandle,
+    state: State<'_, ConnState>,
+    id: String,
+    options: ApplyPresetOptions,
+) -> Result<ApplyPresetReport, AppError> {
+    let preset =
+        presets::find(&id).ok_or_else(|| AppError::Protocol(format!("preset '{id}' not found")))?;
+    let mut report = ApplyPresetReport::default();
+
+    // 1. Lighting — single SET_LED_EFFECT write, optional.
+    if options.lighting {
+        if let Some(cfg) = preset.lighting.as_ref() {
+            let cfg = cfg.clone();
+            state
+                .with(|slot| {
+                    let conn = ensure_open(slot)?;
+                    conn.set_lighting(&cfg)?;
+                    Ok(())
+                })
+                .await?;
+            report.lighting_applied = true;
+        }
+    }
+
+    // 2. Base-layer keymap overrides — read-modify-write the existing
+    // 128-slot keymap so unchanged slots stay untouched.
+    if options.keymap && !preset.keymap_overrides.is_empty() {
+        let overrides = preset.keymap_overrides.clone();
+        let changed = state
+            .with(|slot| {
+                let conn = ensure_open(slot)?;
+                let mut km = conn.get_keymap()?;
+                let mut changed = 0usize;
+                for (s, action) in &overrides {
+                    let i = *s as usize;
+                    if i < km.slots.len() && km.slots[i] != *action {
+                        km.slots[i] = action.clone();
+                        changed += 1;
+                    }
+                }
+                if changed > 0 {
+                    conn.set_keymap(&km)?;
+                }
+                Ok(changed)
+            })
+            .await?;
+        report.keymap_slots_changed = changed;
+    }
+
+    // 3. Fn-layer keymap overrides.
+    if options.fn_keymap && !preset.fn_keymap_overrides.is_empty() {
+        let overrides = preset.fn_keymap_overrides.clone();
+        let changed = state
+            .with(|slot| {
+                let conn = ensure_open(slot)?;
+                let mut km = conn.get_fn_keymap()?;
+                let mut changed = 0usize;
+                for (s, action) in &overrides {
+                    let i = *s as usize;
+                    if i < km.slots.len() && km.slots[i] != *action {
+                        km.slots[i] = action.clone();
+                        changed += 1;
+                    }
+                }
+                if changed > 0 {
+                    conn.set_fn_keymap(&km)?;
+                }
+                Ok(changed)
+            })
+            .await?;
+        report.fn_keymap_slots_changed = changed;
+    }
+
+    // 4. Automation seeds — add to the user's library, skip names that
+    // are already present (no destructive overwrite).
+    if options.automations {
+        let seeds = presets::seeds_for(&preset);
+        if !seeds.is_empty() {
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+            let dir_clone = dir.clone();
+            let added = tokio::task::spawn_blocking(move || -> Result<(usize, usize), String> {
+                let mut list = automations::load(dir_clone.clone())?;
+                let mut added = 0usize;
+                let mut skipped = 0usize;
+                for s in &seeds {
+                    if list.iter().any(|a| a.name == s.name) {
+                        skipped += 1;
+                        continue;
+                    }
+                    let now = unix_millis();
+                    list.push(automations::Automation {
+                        id: now as u64 + added as u64,
+                        name: s.name.into(),
+                        description: s.description.into(),
+                        kind: s.kind,
+                        payload: s.payload.into(),
+                        created_at: now,
+                        updated_at: now,
+                        marker_hid: None,
+                    });
+                    added += 1;
+                }
+                automations::save(dir_clone, &list)?;
+                Ok((added, skipped))
+            })
+            .await
+            .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+            .map_err(AppError::Protocol)?;
+            report.automations_added = added.0;
+            report.automations_skipped_existing = added.1;
+        }
+    }
+
+    Ok(report)
+}
+
 /// macOS Now-Playing snapshot — covers Music.app and Spotify desktop today.
 /// Returns the "nothing playing" sentinel on non-macOS or when nothing is
 /// playing, distinguishing both from infrastructure failure (which surfaces
@@ -659,6 +811,8 @@ pub fn run() {
             get_starter_library,
             assign_automation_marker,
             unassign_automation_marker,
+            list_presets,
+            apply_preset,
         ])
         .setup(|app| {
             use tauri::Manager;

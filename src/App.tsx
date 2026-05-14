@@ -5,6 +5,7 @@ import { Connect } from "./views/Connect";
 import { Keymap } from "./views/Keymap";
 import { Lighting } from "./views/Lighting";
 import { Macros } from "./views/Macros";
+import { Presets } from "./views/Presets";
 import { System } from "./views/System";
 import {
   Layout,
@@ -15,6 +16,7 @@ import {
   Macro,
   Screen,
   Automation,
+  Preset,
   type NavItem,
 } from "./components/Layout";
 
@@ -25,6 +27,7 @@ type Tab =
   | "keymap"
   | "macros"
   | "automations"
+  | "presets"
   | "tft";
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.6 } as const;
@@ -36,6 +39,7 @@ const NAV: NavItem<Tab>[] = [
   { id: "keymap", label: "Keymap & Knob", icon: <Keyboard {...ICON_PROPS} /> },
   { id: "macros", label: "Macros", icon: <Macro {...ICON_PROPS} /> },
   { id: "automations", label: "Automations", icon: <Automation {...ICON_PROPS} /> },
+  { id: "presets", label: "Presets", icon: <Preset {...ICON_PROPS} /> },
   { id: "tft", label: "TFT Display", icon: <Screen {...ICON_PROPS} />, comingSoon: true },
 ];
 
@@ -91,6 +95,7 @@ export default function App() {
       {tab === "keymap" && <Keymap />}
       {tab === "macros" && <Macros />}
       {tab === "automations" && <Automations />}
+      {tab === "presets" && <Presets />}
     </Layout>
   );
 }

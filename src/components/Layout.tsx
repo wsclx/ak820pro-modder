@@ -221,6 +221,7 @@ export {
   Zap as Macro,
   Monitor as Screen,
   Workflow as Automation,
+  Layers as Preset,
   RefreshCw,
   Check,
   AlertCircle,

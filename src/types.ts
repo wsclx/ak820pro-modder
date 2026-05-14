@@ -100,3 +100,34 @@ export interface StarterAutomation {
   payload: string;
   category: string;
 }
+
+/* ---- Cross-cutting Presets ---- */
+
+/** Mirrors `Preset` from `src-tauri/src/presets.rs`. */
+export interface Preset {
+  id: string;
+  name: string;
+  category: string;
+  icon: string;
+  description: string;
+  lighting: LightingConfig | null;
+  keymap_overrides: [number, unknown][];
+  fn_keymap_overrides: [number, unknown][];
+  automation_seeds: string[];
+}
+
+export interface ApplyPresetOptions {
+  lighting: boolean;
+  keymap: boolean;
+  fn_keymap: boolean;
+  automations: boolean;
+}
+
+export interface ApplyPresetReport {
+  lighting_applied: boolean;
+  keymap_slots_changed: number;
+  fn_keymap_slots_changed: number;
+  automations_added: number;
+  automations_skipped_existing: number;
+  warnings: string[];
+}
