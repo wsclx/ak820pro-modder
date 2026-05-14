@@ -195,9 +195,9 @@ Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hard
 | 6a — Now-Playing reader | ✅ | macOS Music.app + Spotify desktop, surfaced in System view |
 | 6b — Automations engine | ✅ | AppleScript / Shortcut / Shell library, 15 curated starters, keyboard-side triggers via F13–F24 markers |
 | 6c — Cross-cutting presets | ✅ | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle |
-| 6d — Audio-reactive lighting | 🛣 | ScreenCaptureKit system-audio tap + FFT → colour map |
+| 6d — Audio-reactive lighting | 🧪 alpha | ScreenCaptureKit + Hann-windowed real FFT → bass/mids/highs → Spectrum preset on the per-key grid. Two-stage Alpha unlock in the Lighting view. Real-music smoothness still WIP (firmware HID pipeline saturates at ~15 fps for a full 128-LED update). |
 | 6e — Now-playing on TFT | 🛣 | Gated on Phase 5b — stream the Now-Playing reader's snapshot to the keyboard's display |
-| 6f — iCloud profile sync | 🛣 | Plist + macros + automations roundtripped through `~/Library/Mobile Documents` so multiple Macs share one config |
+| 6f — iCloud profile sync | 🧪 beta | Automations library round-trips through `~/Library/Mobile Documents/com~apple~CloudDocs/ak820pro-modder/`. Toggle + Push/Pull/Refresh in System view. Per-record merge + custom-LED snapshots + settings come in 0.7.x. |
 | 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
 | 8 — Multi-layout | 🛣 | ANSI, ISO-FR, ISO-ES, ISO-UK, JIS variants. Cleanly isolated under `src/data/layouts/` with a layout-picker UI. The wire protocol already works for every variant; this is purely about the on-screen keyboard surface. |
 

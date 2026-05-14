@@ -313,9 +313,9 @@ ak820pro-modder/
 | 6a — Now-Playing reader | ✅ done | JXA probe of Music.app + Spotify desktop every 2 s, surfaced in System view | Phase-6 preview for the TFT pipeline |
 | 6b — Automations engine | ✅ done | AppleScript / Shortcut / Shell library with 15 curated starters, persistence to `$APP_DATA/automations.json`, run-with-output panel, keyboard-side triggers via F13–F24 markers (Carbon RegisterEventHotKey via `tauri-plugin-global-shortcut`) | up to 12 keyboard-bindable automations at once |
 | 6c — Cross-cutting presets | ✅ done | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle, additive apply with per-component opt-in | sparse keymap overrides + automation seeds resolved against starter library |
-| 6d — Audio-reactive lighting | ⏳ pending | — | ScreenCaptureKit system-audio tap + FFT → per-key RGB |
+| 6d — Audio-reactive lighting | 🧪 alpha | `crates/ak820-audio-reactive` — ScreenCaptureKit (`macos_13_0`) + `realfft` 3.5 → bass/mids/highs → 3-zone Spectrum preset on the per-key grid. Two-stage Alpha unlock in Lighting view (Locked/Unlocked + Streaming Off/On), `localStorage`-persisted. CLI smoke probe `ak820 audio meter`. | Real-music smoothness still flickery — wire-level cadence of `set_custom_led` (10 HID chunks per frame) saturates the firmware pipeline at ~15 fps. Frame deduplication kills the silence-flicker; faster-than-15-fps needs a protocol-layer change (skip per-chunk `read_response` in `set_many_at`). |
 | 6e — Now-playing on TFT | ⏳ pending | — | gated on Phase 5b activation sequence |
-| 6f — iCloud profile sync | ⏳ pending | — | export macros + automations + lighting snapshots to `~/Library/Mobile Documents` |
+| 6f — iCloud profile sync | 🧪 beta | `src-tauri/src/icloud_sync.rs` — thin transport: detect `$HOME/Library/Mobile Documents/com~apple~CloudDocs/`, push/pull `ak820pro-modder/automations.json` with last-write-wins by mtime. Tauri commands `icloud_sync_status/_push/_pull`. SyncCard in System view with toggle + manual buttons. App-mount auto-pull, save-hook auto-push. Hermetic unit tests inject the iCloud root so CI without iCloud still passes. | Per-record ID-based merge + custom-LED snapshots + settings sync are 0.7.x follow-ups. |
 
 ### Open visual TODOs
 
