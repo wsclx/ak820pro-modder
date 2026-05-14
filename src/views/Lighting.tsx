@@ -203,69 +203,6 @@ export function Lighting() {
       <ErrorBanner>{err}</ErrorBanner>
 
       <div className="grid gap-6">
-        <Card
-          title={
-            <span className="inline-flex items-center gap-2">
-              <span>Audio-reactive</span>
-              <Badge tone="warn">Alpha</Badge>
-            </span>
-          }
-          action={
-            <Toggle
-              checked={audioReactiveUnlocked}
-              onChange={toggleAudioReactiveUnlock}
-            >
-              {audioReactiveUnlocked ? "Unlocked" : "Locked"}
-            </Toggle>
-          }
-        >
-          <p className="text-sm text-fg-2">
-            Taps the macOS system-audio mix, runs an FFT, and paints the keyboard
-            with bass / mids / highs as red / green / blue across vertical zones.
-            While streaming, the firmware sits in <code>custom</code> mode and the
-            controls below are paused.
-          </p>
-          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-fg-1">
-            <strong className="text-amber-300">Experimental — use at your own risk.</strong>
-            <br />
-            Known issues: visible flicker on real music, the wire-level cadence
-            is sometimes faster than the firmware's per-key RGB pipeline can
-            ingest. The toggle below stays disabled until you opt in here,
-            so a casual user can't accidentally enable a feature that looks
-            broken. The opt-in persists across launches.
-          </p>
-          <p className="mt-2 text-xs text-fg-3">
-            First run pops the macOS Screen Recording permission prompt — that's
-            normal, ScreenCaptureKit shares the same TCC bucket even for
-            audio-only capture. Once granted, the toggle works silently.
-          </p>
-
-          <div
-            className={[
-              "mt-4 flex items-center justify-between border-t border-line/60 pt-4",
-              audioReactiveUnlocked ? "" : "pointer-events-none opacity-50",
-            ].join(" ")}
-          >
-            <div>
-              <p className="text-sm text-fg-1">Streaming</p>
-              <p className="text-xs text-fg-3">
-                {audioReactive
-                  ? "Live — keyboard is following the system audio mix."
-                  : audioReactiveUnlocked
-                  ? "Idle. Flip to start the FFT loop."
-                  : "Unlock above to enable."}
-              </p>
-            </div>
-            <Toggle
-              checked={audioReactive}
-              onChange={toggleAudioReactive}
-              disabled={!audioReactiveUnlocked || audioBusy}
-            >
-              {audioReactive ? "Streaming" : "Off"}
-            </Toggle>
-          </div>
-        </Card>
-
         <div
           className={["grid gap-6", audioReactive ? "pointer-events-none opacity-50" : ""].join(" ")}
         >
@@ -407,6 +344,77 @@ export function Lighting() {
         </>
         )}
         </div>
+
+        {/*
+          * Audio-reactive (Alpha) — deliberately the *last* card on this
+          * page. The Mode / Color / Direction / Levels stack above is the
+          * primary daily workflow; the experimental block lives at the
+          * bottom where a casual user has to scroll past the real
+          * controls to find it, and the Alpha badge + amber warning
+          * makes its status unambiguous when they get there.
+          */}
+        <Card
+          title={
+            <span className="inline-flex items-center gap-2">
+              <span>Audio-reactive</span>
+              <Badge tone="warn">Alpha</Badge>
+            </span>
+          }
+          action={
+            <Toggle
+              checked={audioReactiveUnlocked}
+              onChange={toggleAudioReactiveUnlock}
+            >
+              {audioReactiveUnlocked ? "Unlocked" : "Locked"}
+            </Toggle>
+          }
+        >
+          <p className="text-sm text-fg-2">
+            Taps the macOS system-audio mix, runs an FFT, and paints the keyboard
+            with bass / mids / highs as red / green / blue across vertical zones.
+            While streaming, the firmware sits in <code>custom</code> mode and the
+            controls above are paused.
+          </p>
+          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-fg-1">
+            <strong className="text-amber-300">Experimental — use at your own risk.</strong>
+            <br />
+            Known issues: visible flicker on real music, the wire-level cadence
+            is sometimes faster than the firmware's per-key RGB pipeline can
+            ingest. The toggle below stays disabled until you opt in here,
+            so a casual user can't accidentally enable a feature that looks
+            broken. The opt-in persists across launches.
+          </p>
+          <p className="mt-2 text-xs text-fg-3">
+            First run pops the macOS Screen Recording permission prompt — that's
+            normal, ScreenCaptureKit shares the same TCC bucket even for
+            audio-only capture. Once granted, the toggle works silently.
+          </p>
+
+          <div
+            className={[
+              "mt-4 flex items-center justify-between border-t border-line/60 pt-4",
+              audioReactiveUnlocked ? "" : "pointer-events-none opacity-50",
+            ].join(" ")}
+          >
+            <div>
+              <p className="text-sm text-fg-1">Streaming</p>
+              <p className="text-xs text-fg-3">
+                {audioReactive
+                  ? "Live — keyboard is following the system audio mix."
+                  : audioReactiveUnlocked
+                  ? "Idle. Flip to start the FFT loop."
+                  : "Unlock above to enable."}
+              </p>
+            </div>
+            <Toggle
+              checked={audioReactive}
+              onChange={toggleAudioReactive}
+              disabled={!audioReactiveUnlocked || audioBusy}
+            >
+              {audioReactive ? "Streaming" : "Off"}
+            </Toggle>
+          </div>
+        </Card>
       </div>
     </>
   );
