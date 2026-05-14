@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Badge, BatteryBar, Button, Card, ErrorBanner, KVList, Mono, formatInt, hex4 } from "../components/ui";
 import { PageHeader } from "../components/Layout";
 import { NowPlayingCard } from "../components/NowPlayingCard";
+import { SyncCard } from "../components/SyncCard";
 import { formatError } from "../errors";
 
 interface DeviceInfoReport {
@@ -204,6 +205,8 @@ export function System() {
           </Card>
 
           <NowPlayingCard />
+
+          <SyncCard />
         </div>
       </div>
     </>

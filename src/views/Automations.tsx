@@ -19,6 +19,7 @@ import type {
   StarterAutomation,
 } from "../types";
 import { formatError } from "../errors";
+import { ICLOUD_SYNC_ENABLED_KEY } from "../components/SyncCard";
 
 const KIND_LABEL: Record<AutomationKind, string> = {
   apple_script: "AppleScript",
@@ -107,6 +108,22 @@ export function Automations() {
     try {
       await invoke("save_automations", { list: next });
       setItems(next);
+      // Auto-push to iCloud on save when the user has opted in. Fire-
+      // and-forget so a sync failure (iCloud paused, network out)
+      // doesn't break the local save UX — the System → Sync card
+      // surfaces the iCloud-side state.
+      let cloudOn = false;
+      try {
+        cloudOn = window.localStorage.getItem(ICLOUD_SYNC_ENABLED_KEY) === "true";
+      } catch {
+        /* private-browsing — ignore */
+      }
+      if (cloudOn) {
+        void invoke("icloud_sync_push").catch(() => {
+          // Intentional swallow — the user can still see the failure
+          // in the Sync card if they navigate to it.
+        });
+      }
     } catch (e) {
       setErr(formatError(e));
     } finally {

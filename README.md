@@ -36,7 +36,7 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 | **Cross-cutting presets** | ❌ | ✅ 10 curated profiles (Gaming / Dev / Office / Creative / Lifestyle) |
 | Audio-reactive lighting | ❌ | 🧪 alpha — pipeline works, real-music smoothness still WIP |
 | Now-playing on TFT | ❌ | 🛣 planned (gated on TFT activation RE) |
-| Profile sync across machines | ❌ | 🛣 planned (iCloud Drive) |
+| Profile sync across machines | ❌ | 🧪 beta (iCloud Drive · automations library, more files coming) |
 | Open source | ❌ | ✅ MIT |
 
 ## Status

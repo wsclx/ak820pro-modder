@@ -16,6 +16,7 @@ use tracing_subscriber::EnvFilter;
 #[cfg(target_os = "macos")]
 mod audio_reactive;
 mod automations;
+mod icloud_sync;
 mod now_playing;
 mod presets;
 mod starter_library;
@@ -865,6 +866,65 @@ async fn audio_reactive_status() -> Result<bool, AppError> {
     Ok(false)
 }
 
+/* --------------------------------------------------- iCloud Sync (Phase 6) --
+ *
+ * Backend is a thin transport: detect the iCloud Drive root, copy a file
+ * each way, report mtime. The frontend keeps the "enabled" flag (in
+ * localStorage) and orchestrates *when* to push or pull — on app start
+ * (pull), after every save (push), or via the manual "Sync Now" button.
+ *
+ * Three commands:
+ *   icloud_sync_status   - cheap probe: is iCloud Drive present + does
+ *                           the remote automations file exist?
+ *   icloud_sync_push     - copy local automations.json → iCloud
+ *   icloud_sync_pull     - copy iCloud automations.json → local *only*
+ *                           if the iCloud copy is strictly newer
+ *
+ * `push` and `pull` both return the resulting remote mtime (or `None`
+ * on pull when nothing was newer) so the UI can render "last synced: …".
+ */
+
+#[tauri::command]
+async fn icloud_sync_status() -> Result<icloud_sync::SyncStatus, AppError> {
+    // Spawn-blocking because `std::fs::metadata` does I/O and we don't
+    // want to stall the tokio worker even briefly on a slow disk.
+    tokio::task::spawn_blocking(icloud_sync::status)
+        .await
+        .map_err(|e| AppError::Protocol(format!("join: {e}")))
+}
+
+#[tauri::command]
+async fn icloud_sync_push(app: AppHandle) -> Result<u64, AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    let local_path = automations::storage_path(dir);
+    tokio::task::spawn_blocking(move || icloud_sync::push_automations(&local_path))
+        .await
+        .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+}
+
+#[tauri::command]
+async fn icloud_sync_pull(app: AppHandle) -> Result<Option<u64>, AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    let local_path = automations::storage_path(dir);
+    let result =
+        tokio::task::spawn_blocking(move || icloud_sync::pull_automations_if_newer(&local_path))
+            .await
+            .map_err(|e| AppError::Protocol(format!("join: {e}")))??;
+    // After a successful pull we need to re-register the global
+    // shortcuts because the marker bindings may have changed. Same
+    // call as `save_automations` runs after a write.
+    if result.is_some() {
+        refresh_automation_shortcuts(&app).map_err(AppError::Protocol)?;
+    }
+    Ok(result)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -922,6 +982,9 @@ pub fn run() {
             audio_reactive_start,
             audio_reactive_stop,
             audio_reactive_status,
+            icloud_sync_status,
+            icloud_sync_push,
+            icloud_sync_pull,
         ])
         .setup(|app| {
             use tauri::Manager;
