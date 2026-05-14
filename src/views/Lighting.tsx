@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Direction, LightingConfig, LightingModeInfo } from "../types";
 import { Badge, Button, Card, ErrorBanner, Slider, Toggle } from "../components/ui";
 import { PageHeader } from "../components/Layout";
+import { CustomLightingPaint } from "./CustomLightingPaint";
 
 const ALL_DIRECTIONS: Direction[] = ["left", "down", "up", "right"];
 const APPLY_DEBOUNCE_MS = 80;
@@ -86,21 +87,28 @@ export function Lighting() {
   }
 
   const hasSecondary = cfg.secondary !== null && cfg.secondary !== undefined;
+  const isCustomMode = cfg.mode === "custom";
 
   return (
     <>
       <PageHeader
         title="Lighting"
-        description="Per-keyboard global effects. Changes apply immediately when auto-apply is on."
+        description={
+          isCustomMode
+            ? "Per-key custom RGB — click any key on the layout below to paint it."
+            : "Per-keyboard global effects. Changes apply immediately when auto-apply is on."
+        }
         action={
-          <div className="flex items-center gap-4">
-            <Toggle checked={autoApply} onChange={setAutoApply}>
-              Auto-apply
-            </Toggle>
-            <Button variant="primary" onClick={() => void applyNow(cfg)} disabled={busy}>
-              {busy ? "Sending…" : "Apply"}
-            </Button>
-          </div>
+          isCustomMode ? null : (
+            <div className="flex items-center gap-4">
+              <Toggle checked={autoApply} onChange={setAutoApply}>
+                Auto-apply
+              </Toggle>
+              <Button variant="primary" onClick={() => void applyNow(cfg)} disabled={busy}>
+                {busy ? "Sending…" : "Apply"}
+              </Button>
+            </div>
+          )
         }
       />
 
@@ -126,6 +134,10 @@ export function Lighting() {
           </div>
         </Card>
 
+        {isCustomMode ? (
+          <CustomLightingPaint inheritedConfig={cfg} />
+        ) : (
+        <>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card title="Color">
             <div className="flex items-center gap-3">
@@ -229,6 +241,8 @@ export function Lighting() {
             <Slider label="Speed" value={cfg.speed} max={5} onChange={(v) => update("speed", v)} />
           </div>
         </Card>
+        </>
+        )}
       </div>
     </>
   );

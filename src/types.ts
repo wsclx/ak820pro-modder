@@ -41,3 +41,18 @@ export interface LightingConfig {
   speed: number;
   direction: Direction;
 }
+
+/* ---- Per-key RGB (cmd 36 SET_CUSTOM_LED_DATA, mode 0x80) ---- */
+
+/** Mirrors `LedColor` from `ak820_protocol::commands::per_key_rgb`. */
+export interface LedColor {
+  led_id: number;
+  red: number;
+  green: number;
+  blue: number;
+}
+
+/** 128-LED snapshot. Index in `leds` == slot id (and `led_id` mirrors it). */
+export interface CustomLedMap {
+  leds: LedColor[];
+}
