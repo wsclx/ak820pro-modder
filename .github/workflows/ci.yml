@@ -93,6 +93,20 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      # macos-14 (ARM) runners have a brew-installed cargo at
+      # /opt/homebrew/bin/cargo that's actually a rustup-init shim. When
+      # setup-node and pnpm/action-setup run *after* the Rust install, they
+      # can re-prepend /opt/homebrew/bin to PATH, shadowing the real cargo
+      # at ~/.cargo/bin/cargo. The Tauri CLI then calls "cargo metadata"
+      # and gets back "unexpected argument 'metadata'" from rustup-init.
+      # Pin our cargo path to the front of PATH so this can't happen.
+      - name: Pin Rust toolchain to PATH front
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          which cargo
+          cargo --version
+          rustc --version
+
       - run: pnpm install --frozen-lockfile
 
       - name: tauri:build (unsigned)
