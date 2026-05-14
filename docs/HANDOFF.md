@@ -184,77 +184,112 @@ packet flag).
 ## 4. Repository Layout
 
 ```
-/Users/mario/DEV/ak820pro/
-├── README.md                       <- public-facing
+ak820pro-modder/
+├── README.md                       <- public-facing pitch + feature matrix
+├── CHANGELOG.md                    <- Keep-a-Changelog
+├── CONTRIBUTING.md                 <- how-to-help + add-a-layout recipe
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md
+├── LICENSE                         <- MIT © wsclx
+├── .github/                        <- issue templates, PR template, CI
 ├── docs/
-│   ├── HANDOFF.md                  <- this file — read first
+│   ├── HANDOFF.md                  <- this file — read first as a maintainer
 │   ├── ARCHITECTURE.md             <- layered breakdown
 │   ├── PROTOCOL.md                 <- byte-level protocol reference
+│   ├── INSTALL.md
 │   └── reverse-engineering/
-│       ├── official-export-firmware-1.07.json   <- profile export from the test unit
-│       └── online-driver/
-│           └── default-protocol.js  <- the AJAZZ driver source, snapshotted
+│       ├── README.md               <- local-only convention + SHA-256 ledger
+│       ├── CAPTURE_GUIDE.md        <- 30-min UTM/USBPcap recipe for new contributors
+│       ├── online-driver/          <- vendor bundles (gitignored)
+│       │   ├── default/            <- ajazz.driveall.cn  (covers ISO-DE)
+│       │   ├── iso-fr/             <- a-jazz-fr.driveall.cn
+│       │   └── iso-es/             <- a-jazz-es.driveall.cn
+│       ├── tools/                  <- vendor exes (gitignored)
+│       └── captures/               <- USB pcaps (gitignored)
 ├── crates/
 │   ├── ak820-protocol/             <- Rust core library (no UI)
 │   │   └── src/
 │   │       ├── lib.rs              <- VID, PID, control interface
 │   │       ├── error.rs
 │   │       ├── protocol.rs         <- build_frame, command bytes, MAGIC_*
-│   │       ├── device.rs           <- Connection, enumerate, get/set,
-│   │       │                          get_many, set_many, all command APIs
+│   │       ├── device.rs           <- Connection, enumerate, get_many,
+│   │       │                          set_many, all command APIs
 │   │       └── commands/
-│   │           ├── lighting.rs     <- Mode, Direction, LightingConfig, encode
+│   │           ├── lighting.rs     <- Mode (incl. Custom 0x80), Direction,
+│   │           │                      LightingConfig, encode
 │   │           ├── system.rs       <- DeviceInfoReport, GameMode, sleep presets
-│   │           ├── keymap.rs       <- KeyAction enum, Keymap, 4-byte codec
-│   │           ├── sleep.rs        (stub)
-│   │           ├── clock.rs        (stub)
-│   │           ├── macros.rs       (stub — Phase 4)
-│   │           └── tft.rs          (stub — Phase 5)
+│   │           ├── keymap.rs       <- KeyAction enum (incl. Macro page 6),
+│   │           │                      Keymap, 4-byte codec
+│   │           ├── macros.rs       <- Macro recorder format (cmd 21 / 37)
+│   │           ├── per_key_rgb.rs  <- 128-LED custom buffer (cmd 36 + mode 0x80)
+│   │           ├── tft.rs          <- TFT animation encode + chunk header
+│   │           │                      (cmd 80; activation pending pcap)
+│   │           ├── sleep.rs        <- stub
+│   │           └── clock.rs        <- stub
 │   └── ak820-cli/
-│       └── src/main.rs             <- `ak820` binary: list, probe,
-│                                       lighting set/modes
+│       └── src/main.rs             <- `ak820` binary: list, probe, lighting,
+│                                       info, game-mode, macros list,
+│                                       rgb fill/rainbow, hid-descriptors,
+│                                       tft solid/cycle/select-index
 ├── src-tauri/
-│   ├── Cargo.toml
-│   ├── tauri.conf.json             <- frontendDist=../dist, no devUrl
+│   ├── Cargo.toml                  <- adds tauri-plugin-global-shortcut
+│   ├── tauri.conf.json             <- frontendDist=../dist, no devUrl;
+│   │                                  identifier io.github.wsclx.ak820pro-modder
 │   ├── build.rs
-│   ├── entitlements.plist          <- USB-HID permission
-│   ├── capabilities/default.json
+│   ├── entitlements.plist          <- USB-HID + automation entitlements
+│   ├── capabilities/default.json   <- shell:allow-open + global-shortcut:default
 │   ├── icons/
 │   └── src/
-│       └── lib.rs                  <- Tauri commands + ConnState mutex +
-│                                       native macOS menu
+│       ├── lib.rs                  <- Tauri commands + ConnState (tokio::Mutex)
+│       │                              + native macOS menu + About dialog
+│       │                              + global-shortcut listener for marker
+│       │                              HIDs 104..115 → automation dispatch
+│       ├── now_playing.rs          <- JXA probe of Music.app + Spotify
+│       ├── automations.rs          <- host-side library (CRUD + run + persist)
+│       ├── starter_library.rs      <- 15 curated AppleScript/Shortcut/Shell
+│       │                              examples shipped with the app
+│       └── presets.rs              <- 10 curated cross-cutting profiles
 ├── src/                            <- React 19 + Vite + TS
 │   ├── main.tsx
-│   ├── App.tsx                     <- tab routing, probe polling
+│   ├── App.tsx                     <- tab routing, probe polling, nav
 │   ├── index.css                   <- Tailwind base + theme tokens
+│   ├── version.ts                  <- APP_VERSION + APP_AUTHOR single source
 │   ├── types.ts
 │   ├── components/
 │   │   ├── ui.tsx                  <- Card, Button, Badge, KVList, Slider,
-│   │   │                              Toggle, BatteryBar, ErrorBanner,
-│   │   │                              Mono, hex4, formatInt, prettyProduct
-│   │   └── Layout.tsx              <- Sidebar + page chrome + lucide-react
-│   │                                  icon re-exports
+│   │   │                              Toggle, BatteryBar, ErrorBanner, Mono
+│   │   ├── Layout.tsx              <- Sidebar + page chrome + lucide icon
+│   │   │                              re-exports + sidebar credit footer
+│   │   └── NowPlayingCard.tsx      <- live Music/Spotify card (Phase 6)
 │   ├── views/
-│   │   ├── Connect.tsx             <- HID enumeration + control-interface info
-│   │   ├── Lighting.tsx            <- 20 modes, color, direction, sliders
+│   │   ├── Connect.tsx             <- HID enumeration
+│   │   ├── Lighting.tsx            <- 20 effect modes + 21st (custom)
+│   │   ├── CustomLightingPaint.tsx <- click-to-paint per-key RGB surface
 │   │   ├── System.tsx              <- firmware, battery, sleep, game-mode
-│   │   └── Keymap.tsx              <- visual ISO-DE, click-to-edit, save
+│   │   │                              (+ NowPlayingCard)
+│   │   ├── Keymap.tsx              <- visual ISO-DE editor + action picker
+│   │   │                              (incl. dynamic Macros + Automations
+│   │   │                              groups + Factory Default button)
+│   │   ├── Macros.tsx              <- recorder + editor + slot list
+│   │   ├── Automations.tsx        <- AppleScript / Shortcut / Shell CRUD
+│   │   │                              + starter library picker + run output
+│   │   └── Presets.tsx             <- 10-profile picker + apply modal
 │   └── data/
-│       └── layouts/                <- one folder per regional layout
-│           ├── types.ts             <- PhysicalKey + KeyboardLayout + LayoutId
-│           ├── index.ts             <- registry, default, resolveLayout()
-│           ├── iso-de.json          <- ISO-DE physical positions, slots & HIDs (v0.5.0-beta ships only this)
-│           └── iso-de.ts            <- typed wrapper
+│       ├── layouts/
+│       │   ├── types.ts            <- PhysicalKey + KeyboardLayout + LayoutId
+│       │   ├── index.ts            <- registry, default, resolveLayout()
+│       │   ├── iso-de.json         <- ISO-DE physical positions (only one
+│       │   │                          v0.5.0-beta ships)
+│       │   └── iso-de.ts           <- typed wrapper
 │       ├── hid-usage-names.ts      <- HID code → human label
-│       └── action-catalog.ts       <- picker groups (letters/digits/F-keys/
-│                                       modifiers/media/special)
+│       └── action-catalog.ts       <- picker groups + Action union type
 ├── index.html
 ├── vite.config.ts                  <- HMR disabled (see Learning #2)
-├── tailwind.config.ts              <- OKLCH-tuned tokens, fg/surface/accent
+├── tailwind.config.ts              <- OKLCH-tuned tokens
 ├── tsconfig.json
 ├── package.json
 ├── Cargo.toml                      <- workspace root
-├── rust-toolchain.toml             <- pinned to 1.90+
+├── rust-toolchain.toml             <- pinned to 1.82+
 └── tests/fixtures/
 ```
 
@@ -271,10 +306,16 @@ packet flag).
 | Design Pass v2 | ✅ done | Linear/Raycast-style sidebar, Lucide icons, OKLCH tokens, no Geist (caused issues) | dark surfaces with rim-light |
 | Polish + Connect UX | ✅ done | Adaptive polling (2s/8s), Reconnect button, hotplug-recovery, number formatting, "AK820 Pro" label, native ⌘+R menu | sequential reads in System view to avoid mutex contention |
 | 3 — Keymap read | ✅ done | Full ISO-DE visual layout, Base + Fn layer, knob/TFT/LED visual placeholders, **responsive scaling 0.55x–1.5x via ResizeObserver+CSS transform** | reads via multi-packet GET_KEY |
-| 3 — Keymap edit | ✅ done | Click-to-select, action picker (letters, digits, F-keys, editing, navigation, modifiers, media, factory-default), dirty-state badge, save+verify, discard | tested with Caps→F12 round-trip |
-| 4 — Macros | ⏳ pending | — | needs more RE (`SET_MACRO` 37, format unknown) |
-| 5 — TFT display | ⏳ pending | placeholder UI exists | needs RE of `SET_TFT_USER_ANIMATION` (80), chunking strategy |
-| 6 — Power features | ⏳ pending | — | audio-reactive, now-playing, AppleScript bridge, iCloud sync |
+| 3 — Keymap edit | ✅ done | Click-to-select, action picker (letters, digits, F-keys, editing, navigation, modifiers, media, factory-default), Factory Default button (cmd 31 / 28), dirty-state badge, save+verify, discard | tested with Caps→F12 round-trip |
+| 4 — Macros | ✅ done | Two-phase encoded write (cmd 21/37), recorder UI, ActionCatalog group, ISO-DE keyboard binding | wire flags inverted-looking — see § 6.8 |
+| 5a — Per-key RGB | ✅ done | `SET_CUSTOM_LED_DATA` (cmd 36), 128-LED × 4 B buffer, `Mode::Custom = 0x80`, click-to-paint UI in Lighting view | CLI hardware-verified |
+| 5b — TFT display | 🟡 protocol-only | `SET_TFT_USER_ANIMATION` (cmd 80), 4104-byte chunks on iface 3 (0xFF67), bespoke 8-byte chunk header, RGB565 LE pixels, CLI `tft solid/cycle` writes | upload reaches device but display still shows default animation — pending USB pcap of the official Windows tool for the activation sequence |
+| 6a — Now-Playing reader | ✅ done | JXA probe of Music.app + Spotify desktop every 2 s, surfaced in System view | Phase-6 preview for the TFT pipeline |
+| 6b — Automations engine | ✅ done | AppleScript / Shortcut / Shell library with 15 curated starters, persistence to `$APP_DATA/automations.json`, run-with-output panel, keyboard-side triggers via F13–F24 markers (Carbon RegisterEventHotKey via `tauri-plugin-global-shortcut`) | up to 12 keyboard-bindable automations at once |
+| 6c — Cross-cutting presets | ✅ done | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle, additive apply with per-component opt-in | sparse keymap overrides + automation seeds resolved against starter library |
+| 6d — Audio-reactive lighting | ⏳ pending | — | ScreenCaptureKit system-audio tap + FFT → per-key RGB |
+| 6e — Now-playing on TFT | ⏳ pending | — | gated on Phase 5b activation sequence |
+| 6f — iCloud profile sync | ⏳ pending | — | export macros + automations + lighting snapshots to `~/Library/Mobile Documents` |
 
 ### Open visual TODOs
 
@@ -428,6 +469,30 @@ RE picture — like the v1.0.0.5 Win driver, which is the ANSI build —
 The wire-protocol findings are still valid (the protocol is
 layout-agnostic), but copy any layout-specific positions into a
 *separate* layout file.
+
+### 6.9c Automation marker keys must never overlap user-remapped F-keys
+The Automations subsystem reserves HID 104..115 (F13–F24) as global-hotkey
+markers. `tauri-plugin-global-shortcut` (Carbon `RegisterEventHotKey`)
+captures these keystrokes system-wide — they don't reach the focused app.
+That's deliberate (we want the keyboard to trigger automations, not also
+type F19 into Notepad), but it means a user who remaps a physical key to
+F19 for some unrelated reason will find F19 silently swallowed. Hence the
+auto-allocator picks the LOWEST free marker on each new binding, leaves
+markers attached to deleted automations only until the next save.
+
+If a user complains "F-something doesn't type anymore", check the
+Automations tab for a binding using that marker.
+
+### 6.9d macOS-14 CI shadowed `cargo` with brew's `rustup-init` shim
+On macos-14 ARM runners, `setup-node` and `pnpm/action-setup` re-prepend
+`/opt/homebrew/bin` to `PATH` *after* the Rust toolchain install. Brew's
+`cargo` symlink at `/opt/homebrew/bin/cargo` resolves to `rustup-init`,
+which has no `metadata` subcommand and emits "unexpected argument" —
+exactly what `tauri build`'s internal `cargo metadata` call surfaces. The
+Tauri-bundle CI job now explicitly prepends `$HOME/.cargo/bin` and runs
+`which cargo` / `cargo --version` validation right before `tauri:build`
+so future regressions surface at the diagnostic step, not 4 minutes deep
+inside a release build.
 
 ### 6.9 Keymap action-page enum `O` values (mismatch landmine)
 The official enum is:

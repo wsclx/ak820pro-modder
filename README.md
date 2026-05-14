@@ -26,19 +26,22 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 | CLI / scripting | ❌ | ✅ `ak820` headless binary |
 | Transparent protocol | ❌ closed | ✅ [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — every byte documented |
 | 20 lighting modes | ✅ | ✅ |
-| Per-key RGB | ✅ | ✅ wire-level (UI in progress) |
-| Keymap remap | ✅ | ✅ base + Fn layer |
+| Per-key RGB | ✅ | ✅ click-to-paint surface |
+| Keymap remap | ✅ | ✅ base + Fn layer + factory-default reset |
 | Macro recorder | ✅ | ✅ live capture in the app |
 | TFT image upload | ✅ | 🚧 wire-format decoded, visibility verification in progress |
+| **AppleScript / Shortcuts library** | ❌ | ✅ host-side runner with 15 starter examples |
+| **Keyboard-triggered automations** | ❌ | ✅ bind AppleScripts to physical keys via F13–F24 markers |
+| **Now-Playing reader (Music + Spotify)** | ❌ | ✅ live in the System view |
+| **Cross-cutting presets** | ❌ | ✅ 10 curated profiles (Gaming / Dev / Office / Creative / Lifestyle) |
 | Audio-reactive lighting | ❌ | 🛣 planned (macOS ScreenCaptureKit) |
-| Now-playing on TFT | ❌ | 🛣 planned (MediaRemote bridge) |
+| Now-playing on TFT | ❌ | 🛣 planned (gated on TFT activation RE) |
 | Profile sync across machines | ❌ | 🛣 planned (iCloud Drive) |
-| AppleScript / Shortcuts bridge | ❌ | 🛣 planned |
 | Open source | ❌ | ✅ MIT |
 
 ## Status
 
-**Version 0.5.0-beta.** Lighting, keymap, macros, system info are hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). Per-key RGB and TFT upload are protocol-complete and ship a CLI smoke test; full UI for both is in active development. See the [Roadmap](#roadmap) section for details.
+**Version 0.5.0-beta.** Lighting (incl. per-key paint surface), keymap (with factory-default reset), macros, system info, and the host-side automations engine — including a curated 15-entry starter library and one-click cross-cutting presets — are all hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). TFT upload is protocol-complete and ships a CLI smoke test; the in-app TFT UI is gated on one final reverse-engineering step. See the [Roadmap](#roadmap) section for details.
 
 > ⚠️ **Layout scope.** `v0.5.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. The wire protocol itself is layout-agnostic, so the lighting / system / per-key-RGB / TFT paths work on every AK820 Pro variant — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
 
@@ -103,6 +106,27 @@ Full CLI help is `ak820 --help`.
 - Firmware version + battery level + charge state + active profile slot
 - Sleep-timer presets (never / 1m / 5m / 10m / 15m / 30m)
 - Live device info read-back after every write to confirm the keyboard actually accepted what we sent
+- **Now-Playing card** (macOS): live read of Music.app + Spotify desktop, refreshed every 2 s. Foundation for streaming the track to the TFT display once the activation sequence is unblocked.
+
+### Per-key RGB
+- Click-to-paint surface that mirrors the ISO-DE keyboard layout
+- Brush palette + Fill-all / Clear-all helpers
+- Auto-apply with 120 ms debounce so painting feels real-time on the hardware
+- Hidden under the Lighting view's `custom` effect mode (`SET_LED_EFFECT` with mode byte `0x80`)
+
+### Automations
+- Host-side library of AppleScripts, macOS Shortcuts, and shell commands
+- **15 curated starter examples** out of the box across six categories (System, Files, Clipboard, Media, Web, Dev) — no sudo, no external deps, all safe
+- Per-entry editor with type-aware payload (textarea for AppleScript / shell, picker for installed Shortcuts)
+- Inline run + stdout/stderr/exit-code panel
+- Persisted to `~/Library/Application Support/io.github.wsclx.ak820pro-modder/automations.json`
+- **Bind any automation to a physical key** in the Keymap view: pick from the `Automations` action group → backend auto-assigns an F13–F24 marker → registers a global hotkey via Carbon `RegisterEventHotKey` → key press fires the script (up to 12 simultaneous bindings, no Accessibility permission needed)
+
+### Presets
+- Cross-cutting profiles bundling lighting + sparse keymap overrides + automation seeds
+- **10 starter presets** across 5 categories: Gaming (FPS · MMO), Dev (Linux Terminal · Vibe Coder · White Hat), Office (MS365), Creative (Music Production · Writing Focus), Lifestyle (Streaming · Travel battery saver)
+- **Additive apply** — patches your current state, doesn't wipe anything. The user opts into each component (lighting / base keymap / Fn keymap / automations) per preset.
+- Inline post-apply report showing exactly what changed
 
 ### Coming next
 See the [Roadmap](#roadmap) section and the [`docs/HANDOFF.md`](docs/HANDOFF.md) file for the engineering trail.
@@ -151,11 +175,16 @@ Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hard
 | 0 — Foundation | ✅ | Tauri shell, workspace, HID transport, probe handshake |
 | 1 — Lighting | ✅ | 20 modes + secondary colour + brightness / speed / direction |
 | 2 — System | ✅ | Device info, battery, sleep timer, profile, game-mode |
-| 3 — Keymap | ✅ | Base + Fn layer editor, visual ISO-DE surface, 128-slot round-trip |
+| 3 — Keymap | ✅ | Base + Fn layer editor, visual ISO-DE surface, 128-slot round-trip, factory-default reset |
 | 4 — Macros | ✅ | Recorder, editor, ActionCatalog integration, hardware-verified |
-| 5a — Per-key RGB | 🟡 | Protocol + CLI verified; UI in progress |
-| 5b — TFT display | 🟡 | Protocol + CLI upload verified at wire level; visibility flip pending USB pcap |
-| 6 — Power features | 🛣 | Audio-reactive RGB (ScreenCaptureKit), now-playing on TFT (MediaRemote), AppleScript bridge, iCloud profile sync |
+| 5a — Per-key RGB | ✅ | Protocol + CLI + click-to-paint UI in the Lighting view |
+| 5b — TFT display | 🟡 | Protocol + CLI upload verified at wire level; visibility flip pending USB pcap of the official Windows tool |
+| 6a — Now-Playing reader | ✅ | macOS Music.app + Spotify desktop, surfaced in System view |
+| 6b — Automations engine | ✅ | AppleScript / Shortcut / Shell library, 15 curated starters, keyboard-side triggers via F13–F24 markers |
+| 6c — Cross-cutting presets | ✅ | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle |
+| 6d — Audio-reactive lighting | 🛣 | ScreenCaptureKit system-audio tap + FFT → colour map |
+| 6e — Now-playing on TFT | 🛣 | Gated on Phase 5b — stream the Now-Playing reader's snapshot to the keyboard's display |
+| 6f — iCloud profile sync | 🛣 | Plist + macros + automations roundtripped through `~/Library/Mobile Documents` so multiple Macs share one config |
 | 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
 | 8 — Multi-layout | 🛣 | ANSI, ISO-FR, ISO-ES, ISO-UK, JIS variants. Cleanly isolated under `src/data/layouts/` with a layout-picker UI. The wire protocol already works for every variant; this is purely about the on-screen keyboard surface. |
 

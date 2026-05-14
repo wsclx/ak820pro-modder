@@ -91,6 +91,8 @@ offset | field
 | `GET_CUSTOM_LED_DATA` | 20 | per-key RGB (read, 512 bytes) |
 | `GET_MACRO` | 21 | |
 | `GET_FN_KEY` | 22 | Fn-layer remap |
+| `GET_DEFAULT_FN_KEY_MATRIX` | 28 | firmware-default Fn layer (read-only, same shape as `GET_FN_KEY`) |
+| `GET_DEFAULT_KEY_MATRIX` | 31 | firmware-default base layer (read-only, same shape as `GET_KEY`). Used by the app's "Factory default" button — staged into the keymap draft for user review before write. |
 | `SET_GAME_MODE` | 33 | |
 | `SET_KEY` | 34 | |
 | **`SET_LED_EFFECT`** | **35 (0x23)** | global lighting (write) |
