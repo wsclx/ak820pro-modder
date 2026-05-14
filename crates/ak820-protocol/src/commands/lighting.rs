@@ -50,11 +50,26 @@ pub enum Mode {
 
 impl Mode {
     pub const ALL: &'static [Mode] = &[
-        Self::Off, Self::Static, Self::SingleOn, Self::SingleOff,
-        Self::Glittering, Self::Falling, Self::Colourful, Self::Breath,
-        Self::Spectrum, Self::Outward, Self::Scrolling, Self::Rolling,
-        Self::Rotating, Self::Explode, Self::Launch, Self::Ripples,
-        Self::Flowing, Self::Pulsating, Self::Tilt, Self::Shuttle,
+        Self::Off,
+        Self::Static,
+        Self::SingleOn,
+        Self::SingleOff,
+        Self::Glittering,
+        Self::Falling,
+        Self::Colourful,
+        Self::Breath,
+        Self::Spectrum,
+        Self::Outward,
+        Self::Scrolling,
+        Self::Rolling,
+        Self::Rotating,
+        Self::Explode,
+        Self::Launch,
+        Self::Ripples,
+        Self::Flowing,
+        Self::Pulsating,
+        Self::Tilt,
+        Self::Shuttle,
         Self::Custom,
     ];
 
@@ -85,15 +100,16 @@ impl Mode {
     }
 
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL.iter().find(|m| m.name().eq_ignore_ascii_case(name)).copied()
+        Self::ALL
+            .iter()
+            .find(|m| m.name().eq_ignore_ascii_case(name))
+            .copied()
     }
 
     pub fn supported_directions(self) -> &'static [Direction] {
         match self {
             Self::Scrolling => &[Direction::Up, Direction::Down],
-            Self::Rolling | Self::Flowing | Self::Tilt => {
-                &[Direction::Left, Direction::Right]
-            }
+            Self::Rolling | Self::Flowing | Self::Tilt => &[Direction::Left, Direction::Right],
             _ => &[],
         }
     }
@@ -110,8 +126,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub const ALL: &'static [Direction] =
-        &[Self::Left, Self::Down, Self::Up, Self::Right];
+    pub const ALL: &'static [Direction] = &[Self::Left, Self::Down, Self::Up, Self::Right];
 
     pub fn from_name(name: &str) -> Option<Self> {
         match name.to_ascii_lowercase().as_str() {

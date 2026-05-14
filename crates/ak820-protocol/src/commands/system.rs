@@ -150,12 +150,30 @@ impl SleepPreset {
 }
 
 pub const SLEEP_PRESETS: &[SleepPreset] = &[
-    SleepPreset { value: 0, label: "never" },
-    SleepPreset { value: 1, label: "1 minute" },
-    SleepPreset { value: 2, label: "5 minutes" },
-    SleepPreset { value: 3, label: "10 minutes" },
-    SleepPreset { value: 4, label: "15 minutes" },
-    SleepPreset { value: 5, label: "30 minutes" },
+    SleepPreset {
+        value: 0,
+        label: "never",
+    },
+    SleepPreset {
+        value: 1,
+        label: "1 minute",
+    },
+    SleepPreset {
+        value: 2,
+        label: "5 minutes",
+    },
+    SleepPreset {
+        value: 3,
+        label: "10 minutes",
+    },
+    SleepPreset {
+        value: 4,
+        label: "15 minutes",
+    },
+    SleepPreset {
+        value: 5,
+        label: "30 minutes",
+    },
 ];
 
 #[cfg(test)]
@@ -166,14 +184,18 @@ mod tests {
     fn device_info_parses_known_layout() {
         // Synthetic 48-byte buffer matching the JS layout.
         let mut b = [0u8; 48];
-        b[0] = 64;            // romSize
-        b[2] = 0x00; b[3] = 0x02; // macroSpaceSize = 512
-        b[4] = 0x45; b[5] = 0x0C; // vid = 0x0C45
-        b[6] = 0x09; b[7] = 0x80; // pid = 0x8009
-        b[8] = 0x07; b[9] = 0x01; // version: (7) + (0*10) + 1*100 = 107 → 1.07
-        b[17] = 100;          // batteryLevel
-        b[18] = 1;            // chargeStatus
-        b[19] = 0;            // currentProfile
+        b[0] = 64; // romSize
+        b[2] = 0x00;
+        b[3] = 0x02; // macroSpaceSize = 512
+        b[4] = 0x45;
+        b[5] = 0x0C; // vid = 0x0C45
+        b[6] = 0x09;
+        b[7] = 0x80; // pid = 0x8009
+        b[8] = 0x07;
+        b[9] = 0x01; // version: (7) + (0*10) + 1*100 = 107 → 1.07
+        b[17] = 100; // batteryLevel
+        b[18] = 1; // chargeStatus
+        b[19] = 0; // currentProfile
 
         let info = DeviceInfoReport::parse(&b);
         assert_eq!(info.rom_size, 64);

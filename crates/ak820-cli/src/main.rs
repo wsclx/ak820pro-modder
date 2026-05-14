@@ -1,14 +1,18 @@
-use anyhow::{Context, Result, bail};
 use ak820_protocol::commands::lighting::{
-    Direction, LightingConfig, MAX_BRIGHTNESS, MAX_SPEED, Mode, led_effect_payload, parse_hex_rgb,
+    led_effect_payload, parse_hex_rgb, Direction, LightingConfig, Mode, MAX_BRIGHTNESS, MAX_SPEED,
 };
-use ak820_protocol::commands::per_key_rgb::{CustomLedMap, LED_COUNT, LedColor};
-use ak820_protocol::commands::tft::{PIXELS_PER_FRAME, TftAnimation, TftFrame};
+use ak820_protocol::commands::per_key_rgb::{CustomLedMap, LedColor, LED_COUNT};
+use ak820_protocol::commands::tft::{TftAnimation, TftFrame, PIXELS_PER_FRAME};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
-#[command(name = "ak820", version, about = "Control CLI for the Epomaker / Ajazz AK820 Pro")]
+#[command(
+    name = "ak820",
+    version,
+    about = "Control CLI for the Epomaker / Ajazz AK820 Pro"
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -229,7 +233,10 @@ fn cmd_probe(json: bool) -> Result<()> {
         println!("Product:   {}", report.product.as_deref().unwrap_or("?"));
         println!(
             "Firmware:  {}",
-            report.firmware_version.as_deref().unwrap_or("<not decoded yet>")
+            report
+                .firmware_version
+                .as_deref()
+                .unwrap_or("<not decoded yet>")
         );
     }
     Ok(())
@@ -310,7 +317,13 @@ fn cmd_lighting_set(
             );
         } else {
             println!("DRY RUN — would send SET_LED_EFFECT (cmd 0x23):");
-            println!("  mode={} brightness={} speed={} direction={:?}", mode.name(), brightness, speed, cfg.direction);
+            println!(
+                "  mode={} brightness={} speed={} direction={:?}",
+                mode.name(),
+                brightness,
+                speed,
+                cfg.direction
+            );
             println!("  payload (16 B): {}", hex::encode(payload));
         }
         return Ok(());
@@ -323,7 +336,9 @@ fn cmd_lighting_set(
     } else {
         println!(
             "Lighting set: mode={} brightness={} speed={}",
-            mode.name(), brightness, speed,
+            mode.name(),
+            brightness,
+            speed,
         );
     }
     Ok(())
@@ -363,7 +378,10 @@ fn cmd_game_mode_get(json: bool) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&gm)?);
     } else {
         println!("Game mode:        {}", gm.game_mode);
-        println!("Sleep timer:      {} (0=never,1=1m,2=5m,3=10m,4=15m,5=30m)", gm.sleep_time);
+        println!(
+            "Sleep timer:      {} (0=never,1=1m,2=5m,3=10m,4=15m,5=30m)",
+            gm.sleep_time
+        );
         println!("Key delay:        {}", gm.key_delay);
         println!("Report rate:      {}", gm.report_rate);
         println!("TFT display time: {}", gm.tft_display_time);
@@ -380,13 +398,21 @@ fn cmd_tft_solid(json: bool, color: &str) -> Result<()> {
         rgb.extend_from_slice(&[r, g, b]);
     }
     let frame = TftFrame::from_rgb888(&rgb, 0)?;
-    let anim = TftAnimation { frames: vec![frame] };
+    let anim = TftAnimation {
+        frames: vec![frame],
+    };
     let tft = ak820_protocol::Connection::open_tft()?;
     tft.upload_tft_animation(&anim)?;
     if json {
-        println!("{}", serde_json::json!({"ok": true, "frames": 1, "color": format!("{:02X}{:02X}{:02X}", r, g, b)}));
+        println!(
+            "{}",
+            serde_json::json!({"ok": true, "frames": 1, "color": format!("{:02X}{:02X}{:02X}", r, g, b)})
+        );
     } else {
-        println!("TFT solid #{:02X}{:02X}{:02X} uploaded (1 frame, ~33 KB).", r, g, b);
+        println!(
+            "TFT solid #{:02X}{:02X}{:02X} uploaded (1 frame, ~33 KB).",
+            r, g, b
+        );
         println!("If the display still shows the default animation, run:");
         println!("    ak820 tft select-index --index N   (try 0, then 1, …)");
     }
@@ -425,7 +451,10 @@ fn cmd_tft_cycle(json: bool, delay_ms: u16) -> Result<()> {
     let conn = ak820_protocol::Connection::open_tft()?;
     conn.upload_tft_animation(&anim)?;
     if json {
-        println!("{}", serde_json::json!({"ok": true, "frames": 6, "delay_ms": delay_ms}));
+        println!(
+            "{}",
+            serde_json::json!({"ok": true, "frames": 6, "delay_ms": delay_ms})
+        );
     } else {
         println!("TFT 6-frame colour cycle uploaded (delay {} ms).", delay_ms);
     }
@@ -565,7 +594,11 @@ fn cmd_macros_list(json: bool) -> Result<()> {
             "  #{:>3}  {:>3} action(s){}",
             m.macro_id,
             m.actions.len(),
-            if m.actions.is_empty() { "  (empty placeholder)" } else { "" },
+            if m.actions.is_empty() {
+                "  (empty placeholder)"
+            } else {
+                ""
+            },
         );
         for (i, a) in m.actions.iter().enumerate().take(8) {
             println!(
@@ -594,7 +627,10 @@ fn cmd_game_mode_set_sleep(json: bool, value: u8) -> Result<()> {
     gm.sleep_time = value;
     conn.set_game_mode(&gm)?;
     if json {
-        println!("{}", serde_json::json!({"ok": true, "previous": prev, "new": value}));
+        println!(
+            "{}",
+            serde_json::json!({"ok": true, "previous": prev, "new": value})
+        );
     } else {
         println!("Sleep timer changed: {} → {}", prev, value);
     }

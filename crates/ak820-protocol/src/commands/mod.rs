@@ -18,7 +18,6 @@ pub mod tft;
 
 pub use keymap::{KeyAction, Keymap, Page as KeyPage, KEYMAP_BYTES};
 pub use macros::{
-    Macro, MacroAction, MacroActionKind, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT,
-    MAX_ACTIONS_PER_MACRO,
+    Macro, MacroAction, MacroActionKind, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO,
 };
 pub use per_key_rgb::{CustomLedMap, LedColor, CUSTOM_LED_BYTES, LED_COUNT};

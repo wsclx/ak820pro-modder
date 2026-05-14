@@ -205,7 +205,10 @@ pub(crate) fn parse_index(index: &[u8]) -> Vec<IndexEntry> {
         let off = slot * 4;
         let addr = u32::from_le_bytes(index[off..off + 4].try_into().unwrap());
         if addr != 0 {
-            out.push(IndexEntry { macro_id: slot as u8, addr });
+            out.push(IndexEntry {
+                macro_id: slot as u8,
+                addr,
+            });
         }
     }
     out
@@ -283,7 +286,11 @@ mod tests {
 
     #[test]
     fn encode_skips_empty_macros() {
-        let m = Macro { macro_id: 5, name: None, actions: vec![] };
+        let m = Macro {
+            macro_id: 5,
+            name: None,
+            actions: vec![],
+        };
         let (index, data) = encode_macros(&[m]).unwrap();
         assert!(index.iter().all(|&b| b == 0));
         assert!(data.is_empty());
@@ -342,7 +349,11 @@ mod tests {
 
     #[test]
     fn reject_out_of_range_id() {
-        let m = Macro { macro_id: 100, name: None, actions: vec![kb(0, 4, true)] };
+        let m = Macro {
+            macro_id: 100,
+            name: None,
+            actions: vec![kb(0, 4, true)],
+        };
         let err = encode_macros(&[m]).unwrap_err();
         match err {
             Error::OutOfRange { field, value, max } => {
@@ -359,7 +370,11 @@ mod tests {
         let actions = (0..MAX_ACTIONS_PER_MACRO + 1)
             .map(|i| kb(0, (i & 0xFF) as u8, true))
             .collect();
-        let m = Macro { macro_id: 0, name: None, actions };
+        let m = Macro {
+            macro_id: 0,
+            name: None,
+            actions,
+        };
         let err = encode_macros(&[m]).unwrap_err();
         assert!(matches!(err, Error::MacroTooLarge { .. }));
     }

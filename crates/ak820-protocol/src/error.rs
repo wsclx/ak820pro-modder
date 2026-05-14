@@ -18,10 +18,18 @@ pub enum Error {
     NotImplemented(&'static str),
 
     #[error("Value out of range for {field}: {value} (max {max})")]
-    OutOfRange { field: &'static str, value: i64, max: i64 },
+    OutOfRange {
+        field: &'static str,
+        value: i64,
+        max: i64,
+    },
 
     #[error("Macro {macro_id} is too large: {size} bytes (limit {limit})")]
-    MacroTooLarge { macro_id: u8, size: usize, limit: usize },
+    MacroTooLarge {
+        macro_id: u8,
+        size: usize,
+        limit: usize,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

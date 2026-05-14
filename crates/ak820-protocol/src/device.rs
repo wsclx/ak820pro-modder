@@ -2,18 +2,18 @@ use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace};
 
-use crate::commands::keymap::{KEYMAP_BYTES, Keymap};
+use crate::commands::keymap::{Keymap, KEYMAP_BYTES};
 use crate::commands::lighting::{self, LightingConfig};
 use crate::commands::macros::{
-    self as macro_cmds, IndexEntry, MACRO_DATA_ADDR, MACRO_INDEX_BYTES, Macro,
+    self as macro_cmds, IndexEntry, Macro, MACRO_DATA_ADDR, MACRO_INDEX_BYTES,
 };
-use crate::commands::per_key_rgb::{CUSTOM_LED_BYTES, CustomLedMap};
+use crate::commands::per_key_rgb::{CustomLedMap, CUSTOM_LED_BYTES};
 use crate::commands::system::{DeviceInfoReport, GameMode};
-use crate::commands::tft::{TftAnimation, build_tft_header};
+use crate::commands::tft::{build_tft_header, TftAnimation};
 use crate::protocol::{
-    HEADER_LEN, MAGIC_INCOMING, PACKET_LEN, PAYLOAD_PER_PACKET, REPORT_ID, build_frame, cmd,
+    build_frame, cmd, HEADER_LEN, MAGIC_INCOMING, PACKET_LEN, PAYLOAD_PER_PACKET, REPORT_ID,
 };
-use crate::{CONTROL_INTERFACE, PRODUCT_IDS, VENDOR_ID, error::*};
+use crate::{error::*, CONTROL_INTERFACE, PRODUCT_IDS, VENDOR_ID};
 
 /// Default response timeout (ms) for non-streaming GET/SET commands.
 const DEFAULT_TIMEOUT_MS: i32 = 500;
@@ -139,7 +139,11 @@ fn parse_max_output_report_size(desc: &[u8]) -> Option<usize> {
         }
         i += 1 + size;
     }
-    if max_bytes == 0 { None } else { Some(max_bytes) }
+    if max_bytes == 0 {
+        None
+    } else {
+        Some(max_bytes)
+    }
 }
 
 pub fn enumerate() -> Result<Vec<DeviceInfo>> {
@@ -180,7 +184,9 @@ impl Connection {
     pub fn open_control() -> Result<Self> {
         let candidates = enumerate()?;
 
-        let by_iface_env = std::env::var("AK820_IFACE").ok().and_then(|v| v.parse::<i32>().ok());
+        let by_iface_env = std::env::var("AK820_IFACE")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok());
         let by_usage_env = std::env::var("AK820_USAGE_PAGE")
             .ok()
             .and_then(|v| u16::from_str_radix(v.trim_start_matches("0x"), 16).ok());
@@ -188,8 +194,7 @@ impl Connection {
         // The official AJAZZ online driver filters collections by usage page —
         // `q(x)` in the source accepts [0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B].
         // On the AK820 Pro that's interface 2 (0xFF68), not interface 3 (0xFF67).
-        const PREFERRED_USAGE_PAGES: &[u16] =
-            &[0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B];
+        const PREFERRED_USAGE_PAGES: &[u16] = &[0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B];
 
         let pick = if let Some(want) = by_iface_env {
             candidates.iter().find(|d| d.interface == want).cloned()
@@ -209,8 +214,7 @@ impl Connection {
         })?;
 
         let api = HidApi::new()?;
-        let device =
-            api.open_path(&std::ffi::CString::new(control.path.clone()).unwrap())?;
+        let device = api.open_path(&std::ffi::CString::new(control.path.clone()).unwrap())?;
         device.set_blocking_mode(true)?;
         info!(
             path = %control.path,
@@ -218,7 +222,10 @@ impl Connection {
             usage_page = format!("0x{:04x}", control.usage_page),
             "opened control interface"
         );
-        Ok(Self { device, info: control })
+        Ok(Self {
+            device,
+            info: control,
+        })
     }
 
     pub fn info(&self) -> &DeviceInfo {
@@ -251,7 +258,8 @@ impl Connection {
     /// Read one input report until either it matches `expected_cmd` or the
     /// timeout elapses. Returns the payload (bytes 8…end of one frame).
     fn read_response(&self, expected_cmd: u8, timeout_ms: i32) -> Result<Vec<u8>> {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms as u64);
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms as u64);
         let mut buf = [0u8; PACKET_LEN];
         loop {
             let remaining_ms = deadline
@@ -260,7 +268,8 @@ impl Connection {
                 .min(i32::MAX as u128) as i32;
             if remaining_ms == 0 {
                 return Err(Error::UnexpectedResponse(format!(
-                    "timeout waiting for cmd 0x{:02x}", expected_cmd,
+                    "timeout waiting for cmd 0x{:02x}",
+                    expected_cmd,
                 )));
             }
             let n = self.device.read_timeout(&mut buf, remaining_ms)?;
@@ -343,12 +352,7 @@ impl Connection {
     /// `addr_base + i * PAYLOAD_PER_PACKET`. The `last_packet` flag stays
     /// `false` for non-final chunks of a GET (the firmware ignores it for
     /// reads, so this only matters for paired SET writes — see `set_many_at`).
-    fn get_many_at(
-        &self,
-        cmd_byte: u8,
-        addr_base: u16,
-        content_size: usize,
-    ) -> Result<Vec<u8>> {
+    fn get_many_at(&self, cmd_byte: u8, addr_base: u16, content_size: usize) -> Result<Vec<u8>> {
         let chunk = PAYLOAD_PER_PACKET;
         let num_chunks = content_size.div_ceil(chunk).max(1);
         let mut out = Vec::with_capacity(content_size);
@@ -399,7 +403,14 @@ impl Connection {
                 &payload[start..start + this_size],
                 last_flag,
             );
-            trace!(cmd = cmd_byte, chunk = i, addr, this_size, last_flag, "SET chunk");
+            trace!(
+                cmd = cmd_byte,
+                chunk = i,
+                addr,
+                this_size,
+                last_flag,
+                "SET chunk"
+            );
             self.write_output_report(&frame)?;
             let _ = self.read_response(cmd_byte, DEFAULT_TIMEOUT_MS);
         }
@@ -467,13 +478,20 @@ impl Connection {
             }
             let action_count = macro_cmds::parse_block_header(&header);
             let actions = if action_count > 0 {
-                let bytes =
-                    self.get_many_at(cmd::GET_MACRO, addr.wrapping_add(4) as u16, action_count * 4)?;
+                let bytes = self.get_many_at(
+                    cmd::GET_MACRO,
+                    addr.wrapping_add(4) as u16,
+                    action_count * 4,
+                )?;
                 macro_cmds::parse_actions(&bytes, action_count)
             } else {
                 Vec::new()
             };
-            macros.push(Macro { macro_id, name: None, actions });
+            macros.push(Macro {
+                macro_id,
+                name: None,
+                actions,
+            });
         }
         Ok(macros)
     }
@@ -608,7 +626,8 @@ impl Connection {
         for i in 0..total_chunks {
             let start = i * TFT_PAYLOAD_LEN;
             let end = (start + TFT_PAYLOAD_LEN).min(payload.len());
-            let header = build_tft_header(cmd::SET_TFT_USER_ANIMATION, i as u16, total_chunks as u16);
+            let header =
+                build_tft_header(cmd::SET_TFT_USER_ANIMATION, i as u16, total_chunks as u16);
 
             // Reset payload region to zero (header overwrites bytes 1..9).
             for b in &mut report[1..] {

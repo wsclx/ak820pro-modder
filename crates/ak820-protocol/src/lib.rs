@@ -9,7 +9,7 @@ pub mod device;
 pub mod error;
 pub mod protocol;
 
-pub use device::{Connection, DeviceInfo, InterfaceProbe, enumerate, probe_interfaces};
+pub use device::{enumerate, probe_interfaces, Connection, DeviceInfo, InterfaceProbe};
 pub use error::{Error, Result};
 pub use protocol::{Frame, ReportId};
 

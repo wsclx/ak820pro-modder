@@ -36,10 +36,20 @@ pub struct LedColor {
 }
 
 impl LedColor {
-    pub const BLACK: Self = Self { led_id: 0, red: 0, green: 0, blue: 0 };
+    pub const BLACK: Self = Self {
+        led_id: 0,
+        red: 0,
+        green: 0,
+        blue: 0,
+    };
 
     pub fn rgb(led_id: u8, red: u8, green: u8, blue: u8) -> Self {
-        Self { led_id, red, green, blue }
+        Self {
+            led_id,
+            red,
+            green,
+            blue,
+        }
     }
 }
 
@@ -52,7 +62,10 @@ pub struct CustomLedMap {
 impl Default for CustomLedMap {
     fn default() -> Self {
         let leds = (0..LED_COUNT)
-            .map(|i| LedColor { led_id: i as u8, ..LedColor::BLACK })
+            .map(|i| LedColor {
+                led_id: i as u8,
+                ..LedColor::BLACK
+            })
             .collect();
         Self { leds }
     }
@@ -73,7 +86,10 @@ impl CustomLedMap {
                     blue: payload[base + 3],
                 });
             } else {
-                leds.push(LedColor { led_id: i as u8, ..LedColor::BLACK });
+                leds.push(LedColor {
+                    led_id: i as u8,
+                    ..LedColor::BLACK
+                });
             }
         }
         Self { leds }
@@ -113,7 +129,10 @@ mod tests {
     fn default_is_all_off() {
         let m = CustomLedMap::default();
         assert_eq!(m.leds.len(), LED_COUNT);
-        assert!(m.leds.iter().all(|l| l.red == 0 && l.green == 0 && l.blue == 0));
+        assert!(m
+            .leds
+            .iter()
+            .all(|l| l.red == 0 && l.green == 0 && l.blue == 0));
         // led_id mirrors slot index
         for (i, l) in m.leds.iter().enumerate() {
             assert_eq!(l.led_id as usize, i);
@@ -123,9 +142,9 @@ mod tests {
     #[test]
     fn round_trip_known_colours() {
         let mut m = CustomLedMap::default();
-        m.set(0, 0xFF, 0, 0);   // slot 0 red
-        m.set(12, 0, 0xFF, 0);  // F12 green
-        m.set(83, 0, 0, 0xFF);  // spacebar blue
+        m.set(0, 0xFF, 0, 0); // slot 0 red
+        m.set(12, 0, 0xFF, 0); // F12 green
+        m.set(83, 0, 0, 0xFF); // spacebar blue
         let encoded = m.encode();
         assert_eq!(encoded.len(), CUSTOM_LED_BYTES);
         // verify the slot-0 layout
@@ -140,7 +159,15 @@ mod tests {
         assert_eq!(decoded.leds[12], LedColor::rgb(12, 0, 0xFF, 0));
         assert_eq!(decoded.leds[83], LedColor::rgb(83, 0, 0, 0xFF));
         // untouched slots stay black, ledId mirrors index
-        assert_eq!(decoded.leds[100], LedColor { led_id: 100, red: 0, green: 0, blue: 0 });
+        assert_eq!(
+            decoded.leds[100],
+            LedColor {
+                led_id: 100,
+                red: 0,
+                green: 0,
+                blue: 0
+            }
+        );
     }
 
     #[test]
@@ -152,6 +179,12 @@ mod tests {
         // First half should mostly carry the 1s
         assert_eq!(m.leds[0].red, 1);
         // Second half should be padded to off
-        assert_eq!(m.leds[100], LedColor { led_id: 100, ..LedColor::BLACK });
+        assert_eq!(
+            m.leds[100],
+            LedColor {
+                led_id: 100,
+                ..LedColor::BLACK
+            }
+        );
     }
 }

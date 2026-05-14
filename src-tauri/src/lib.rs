@@ -1,13 +1,11 @@
 use ak820_protocol::{
-    Connection, DeviceInfo,
     commands::keymap::Keymap,
     commands::lighting::{Direction, LightingConfig, Mode},
-    commands::macros::{
-        MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO, Macro,
-    },
+    commands::macros::{Macro, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO},
     commands::per_key_rgb::CustomLedMap,
-    commands::system::{DeviceInfoReport, GameMode, SLEEP_PRESETS, SleepPreset},
+    commands::system::{DeviceInfoReport, GameMode, SleepPreset, SLEEP_PRESETS},
     device::ProbeReport,
+    Connection, DeviceInfo,
 };
 use serde::Serialize;
 use tauri::State;
@@ -77,28 +75,35 @@ fn list_devices() -> Result<Vec<DeviceInfo>, AppError> {
 fn probe_device() -> Result<ProbeReport, AppError> {
     const CONTROL_USAGE_PAGE: u16 = 0xFF68;
     let candidates = ak820_protocol::enumerate()?;
-    Ok(match candidates.iter().find(|d| d.usage_page == CONTROL_USAGE_PAGE) {
-        Some(d) => ProbeReport {
-            connected: true,
-            interface: d.interface,
-            product: d.product.clone(),
-            firmware_version: None,
+    Ok(
+        match candidates
+            .iter()
+            .find(|d| d.usage_page == CONTROL_USAGE_PAGE)
+        {
+            Some(d) => ProbeReport {
+                connected: true,
+                interface: d.interface,
+                product: d.product.clone(),
+                firmware_version: None,
+            },
+            None => ProbeReport {
+                connected: false,
+                interface: -1,
+                product: None,
+                firmware_version: None,
+            },
         },
-        None => ProbeReport {
-            connected: false,
-            interface: -1,
-            product: None,
-            firmware_version: None,
-        },
-    })
+    )
 }
 
 #[tauri::command]
 async fn close_device(state: State<'_, ConnState>) -> Result<(), AppError> {
-    state.with(|slot| {
-        slot.take();
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            slot.take();
+            Ok(())
+        })
+        .await
 }
 
 #[derive(Serialize)]
@@ -125,27 +130,33 @@ fn list_lighting_modes() -> Vec<LightingModeInfo> {
 
 #[tauri::command]
 async fn get_device_info(state: State<'_, ConnState>) -> Result<DeviceInfoReport, AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        Ok(conn.get_device_info()?)
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_device_info()?)
+        })
+        .await
 }
 
 #[tauri::command]
 async fn get_game_mode(state: State<'_, ConnState>) -> Result<GameMode, AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        Ok(conn.get_game_mode()?)
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_game_mode()?)
+        })
+        .await
 }
 
 #[tauri::command]
 async fn set_game_mode(state: State<'_, ConnState>, mode: GameMode) -> Result<(), AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        conn.set_game_mode(&mode)?;
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_game_mode(&mode)?;
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
@@ -155,70 +166,86 @@ fn list_sleep_presets() -> Vec<SleepPreset> {
 
 #[tauri::command]
 async fn get_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        Ok(conn.get_keymap()?)
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_keymap()?)
+        })
+        .await
 }
 
 #[tauri::command]
 async fn get_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        Ok(conn.get_fn_keymap()?)
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_fn_keymap()?)
+        })
+        .await
 }
 
 #[tauri::command]
 async fn set_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<(), AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        conn.set_keymap(&keymap)?;
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_keymap(&keymap)?;
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
 async fn set_fn_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<(), AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        conn.set_fn_keymap(&keymap)?;
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_fn_keymap(&keymap)?;
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
 async fn get_macros(state: State<'_, ConnState>) -> Result<Vec<Macro>, AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        Ok(conn.get_macros()?)
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_macros()?)
+        })
+        .await
 }
 
 #[tauri::command]
 async fn set_macros(state: State<'_, ConnState>, macros: Vec<Macro>) -> Result<(), AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        conn.set_macros(&macros)?;
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_macros(&macros)?;
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
 async fn get_custom_led(state: State<'_, ConnState>) -> Result<CustomLedMap, AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        Ok(conn.get_custom_led()?)
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_custom_led()?)
+        })
+        .await
 }
 
 #[tauri::command]
 async fn set_custom_led(state: State<'_, ConnState>, map: CustomLedMap) -> Result<(), AppError> {
-    state.with(|slot| {
-        let conn = ensure_open(slot)?;
-        conn.set_custom_led(&map)?;
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_custom_led(&map)?;
+            Ok(())
+        })
+        .await
 }
 
 #[derive(Serialize)]
@@ -242,30 +269,37 @@ fn macro_limits() -> MacroLimits {
 /// also use it internally when the keyboard goes away (unplug, sleep, etc.).
 #[tauri::command]
 async fn force_reconnect(state: State<'_, ConnState>) -> Result<(), AppError> {
-    state.with(|slot| {
-        slot.take();
-        Ok(())
-    }).await
+    state
+        .with(|slot| {
+            slot.take();
+            Ok(())
+        })
+        .await
 }
 
 #[tauri::command]
-async fn apply_lighting(state: State<'_, ConnState>, config: LightingConfig) -> Result<(), AppError> {
-    state.with(|slot| {
-        // Retry once if the cached handle has gone stale (e.g. unplug/replug).
-        for attempt in 0..2 {
-            let conn = ensure_open(slot)?;
-            match conn.set_lighting(&config) {
-                Ok(()) => return Ok(()),
-                Err(e) if attempt == 0 => {
-                    tracing::warn!(?e, "set_lighting failed, reopening device");
-                    slot.take();
-                    continue;
+async fn apply_lighting(
+    state: State<'_, ConnState>,
+    config: LightingConfig,
+) -> Result<(), AppError> {
+    state
+        .with(|slot| {
+            // Retry once if the cached handle has gone stale (e.g. unplug/replug).
+            for attempt in 0..2 {
+                let conn = ensure_open(slot)?;
+                match conn.set_lighting(&config) {
+                    Ok(()) => return Ok(()),
+                    Err(e) if attempt == 0 => {
+                        tracing::warn!(?e, "set_lighting failed, reopening device");
+                        slot.take();
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
                 }
-                Err(e) => return Err(e.into()),
             }
-        }
-        Ok(())
-    }).await
+            Ok(())
+        })
+        .await
 }
 
 fn direction_name(d: &Direction) -> &'static str {
@@ -280,7 +314,9 @@ fn direction_name(d: &Direction) -> &'static str {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_target(false)
         .init();
 

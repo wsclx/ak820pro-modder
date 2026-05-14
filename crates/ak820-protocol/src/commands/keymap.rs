@@ -69,7 +69,11 @@ pub enum KeyAction {
     /// Trigger a stored macro by slot id (0..99). `param2`/`param3` carry
     /// firmware-internal trigger flags we haven't fully decoded yet — preserved
     /// verbatim for non-destructive round-trip.
-    Macro { macro_id: u8, param2: u8, param3: u8 },
+    Macro {
+        macro_id: u8,
+        param2: u8,
+        param3: u8,
+    },
     /// Toggle a layer.
     Tgl { value: u8 },
     /// Generic FUNC (24-bit big-endian value).
@@ -78,7 +82,12 @@ pub enum KeyAction {
     FuncV2 { param1: u16, param2: u16 },
     /// Catch-all for action classes we haven't fully decoded yet — preserved
     /// verbatim so write-back is non-destructive.
-    Raw { page: u8, param1: u8, param2: u8, param3: u8 },
+    Raw {
+        page: u8,
+        param1: u8,
+        param2: u8,
+        param3: u8,
+    },
 }
 
 impl KeyAction {
@@ -95,12 +104,19 @@ impl KeyAction {
         }
         match p {
             0 => Self::Default,
-            1 => Self::Mouse { button: p1, value: p2 },
+            1 => Self::Mouse {
+                button: p1,
+                value: p2,
+            },
             2 => Self::Keyboard { usage: p2 },
             3 => Self::ConsumerKey {
                 value: (p1 as u16) | ((p2 as u16) << 8),
             },
-            6 => Self::Macro { macro_id: p1, param2: p2, param3: p3 },
+            6 => Self::Macro {
+                macro_id: p1,
+                param2: p2,
+                param3: p3,
+            },
             10 => Self::Tgl { value: p1 },
             13 => Self::Func {
                 value: ((p1 as u32) << 16) | ((p2 as u32) << 8) | p3 as u32,
@@ -120,7 +136,11 @@ impl KeyAction {
             Self::Mouse { button, value } => [1, button, value, 0],
             Self::Keyboard { usage } => [2, 0, usage, 0],
             Self::ConsumerKey { value } => [3, (value & 0xFF) as u8, (value >> 8) as u8, 0],
-            Self::Macro { macro_id, param2, param3 } => [6, macro_id, param2, param3],
+            Self::Macro {
+                macro_id,
+                param2,
+                param3,
+            } => [6, macro_id, param2, param3],
             Self::Tgl { value } => [10, value, 0, 0],
             Self::Func { value } => [
                 13,
@@ -134,7 +154,12 @@ impl KeyAction {
                 ((param2 >> 8) & 0xFF) as u8,
                 (param2 & 0xFF) as u8,
             ],
-            Self::Raw { page, param1, param2, param3 } => [page, param1, param2, param3],
+            Self::Raw {
+                page,
+                param1,
+                param2,
+                param3,
+            } => [page, param1, param2, param3],
         }
     }
 }
@@ -188,7 +213,10 @@ mod tests {
 
     #[test]
     fn func_v2_roundtrip() {
-        let a = KeyAction::FuncV2 { param1: 0x1234, param2: 0x5678 };
+        let a = KeyAction::FuncV2 {
+            param1: 0x1234,
+            param2: 0x5678,
+        };
         let bytes = a.encode();
         assert!(bytes[0] >= 0x80);
         assert_eq!(KeyAction::decode(bytes), a);
@@ -203,13 +231,21 @@ mod tests {
     #[test]
     fn macro_action_roundtrip() {
         // Page byte 6 = MACRO (official AJAZZ O enum).
-        let a = KeyAction::Macro { macro_id: 7, param2: 0, param3: 0 };
+        let a = KeyAction::Macro {
+            macro_id: 7,
+            param2: 0,
+            param3: 0,
+        };
         assert_eq!(a.encode(), [6, 7, 0, 0]);
         assert_eq!(KeyAction::decode([6, 7, 0, 0]), a);
         // Preserve unknown flags verbatim. param2/param3 are trigger mode
         // (0/1/2) + repeat count when mode=1; we round-trip whatever the
         // device gave us.
-        let b = KeyAction::Macro { macro_id: 12, param2: 1, param3: 5 };
+        let b = KeyAction::Macro {
+            macro_id: 12,
+            param2: 1,
+            param3: 5,
+        };
         assert_eq!(b.encode(), [6, 12, 1, 5]);
         assert_eq!(KeyAction::decode(b.encode()), b);
     }
@@ -217,10 +253,14 @@ mod tests {
     #[test]
     fn keymap_full_roundtrip() {
         let mut slots: Vec<KeyAction> = (0..TOTAL_SLOTS)
-            .map(|i| KeyAction::Keyboard { usage: (i & 0xFF) as u8 })
+            .map(|i| KeyAction::Keyboard {
+                usage: (i & 0xFF) as u8,
+            })
             .collect();
         slots[100] = KeyAction::Tgl { value: 1 };
-        let km = Keymap { slots: slots.clone() };
+        let km = Keymap {
+            slots: slots.clone(),
+        };
         let bytes = km.encode();
         assert_eq!(bytes.len(), KEYMAP_BYTES);
         assert_eq!(Keymap::decode(&bytes).slots, slots);

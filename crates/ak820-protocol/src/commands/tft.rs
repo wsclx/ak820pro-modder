@@ -125,7 +125,9 @@ impl TftAnimation {
     /// upload.
     pub fn encode(&self) -> Result<Vec<u8>> {
         if self.frames.is_empty() {
-            return Err(Error::NotImplemented("TFT animation must have at least one frame"));
+            return Err(Error::NotImplemented(
+                "TFT animation must have at least one frame",
+            ));
         }
         if self.frames.len() > MAX_FRAMES {
             return Err(Error::OutOfRange {
@@ -203,14 +205,19 @@ mod tests {
     #[test]
     fn encode_single_frame_size_and_header() {
         let frame = solid_color_frame(0xFF, 0, 0, 0);
-        let anim = TftAnimation { frames: vec![frame] };
+        let anim = TftAnimation {
+            frames: vec![frame],
+        };
         let buf = anim.encode().expect("encode");
         // 256 header + 1 frame
         assert_eq!(buf.len(), FRAME_HEADER_BYTES + FRAME_BYTES);
         assert_eq!(buf[0], 1, "header byte 0 = frame count");
         assert_eq!(buf[1], 0x00, "single-frame terminator");
         // The first pixel should be RGB565 LE for solid red = 0xF800 = [0x00, 0xF8].
-        assert_eq!(&buf[FRAME_HEADER_BYTES..FRAME_HEADER_BYTES + 2], &[0x00, 0xF8]);
+        assert_eq!(
+            &buf[FRAME_HEADER_BYTES..FRAME_HEADER_BYTES + 2],
+            &[0x00, 0xF8]
+        );
         // Trailing pad of header is 0xFF.
         assert_eq!(buf[FRAME_HEADER_BYTES - 1], 0xFF);
     }
@@ -251,8 +258,13 @@ mod tests {
 
     #[test]
     fn reject_wrong_pixel_length() {
-        let frame = TftFrame { pixels: vec![0; 10], delay_ms: 0 };
-        let anim = TftAnimation { frames: vec![frame] };
+        let frame = TftFrame {
+            pixels: vec![0; 10],
+            delay_ms: 0,
+        };
+        let anim = TftAnimation {
+            frames: vec![frame],
+        };
         let err = anim.encode().unwrap_err();
         assert!(matches!(err, Error::FrameTooLong { .. }));
     }
