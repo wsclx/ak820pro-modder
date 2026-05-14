@@ -118,45 +118,48 @@ static ALL_PRESETS: &[PresetEntry] = &[
         build: sunset_vertical,
     },
     PresetEntry {
-        id: "color-cycle-slow",
-        display_name: "Color Cycle (slow)",
-        description: "6-frame ROYGBIV-ish cycle at 800 ms per frame. Solid colours \
-             with a soft fade implied by the firmware's frame interpolation.",
-        build: color_cycle_slow,
+        id: "mandala",
+        display_name: "Mandala",
+        description: "Static centred 8-fold symmetric radial pattern in deep \
+             purple / cyan / magenta. Looks like a kaleidoscope frozen at one \
+             rotation; pleasant ambient look.",
+        build: mandala,
     },
     PresetEntry {
-        id: "color-cycle-fast",
-        display_name: "Color Cycle (fast)",
-        description: "12-frame finer-grained cycle at 250 ms per frame. More flicker, more energy.",
-        build: color_cycle_fast,
+        id: "matrix-rain",
+        display_name: "Matrix Rain",
+        description: "Classic green falling-glyph effect on a black background. \
+             16 columns of trails with varying speeds, bright-green heads fading \
+             to dark-green tails. 16 frames at 90 ms.",
+        build: matrix_rain,
     },
     PresetEntry {
-        id: "pulse-cyan",
-        display_name: "Pulse · Cyan",
-        description: "8-frame brightness-pulsing cyan, 150 ms per frame. Reads as a \
-             gentle breathe at full saturation.",
-        build: pulse_cyan,
+        id: "plasma",
+        display_name: "Plasma",
+        description: "Sum-of-sines plasma effect cycling through the full hue \
+             spectrum. 20 frames at 70 ms. Looks like a 1990s demoscene intro.",
+        build: plasma,
     },
     PresetEntry {
-        id: "pulse-magenta",
-        display_name: "Pulse · Magenta",
-        description: "Companion to the cyan pulse in the opposite half of the spectrum.",
-        build: pulse_magenta,
+        id: "starfield",
+        display_name: "Starfield",
+        description: "Stars warping outward from the centre, hyperspace-style. \
+             ~80 stars with radial velocity. 18 frames at 80 ms.",
+        build: starfield,
     },
     PresetEntry {
-        id: "scanline-vertical",
-        display_name: "Scanline",
-        description: "10-frame vertical scanline sweeping top to bottom over a deep-purple \
-             background. Reads like a retro CRT loading screen.",
-        build: scanline_vertical,
+        id: "wave",
+        display_name: "Wave",
+        description: "Cyan sine wave drifting horizontally across deep navy, with \
+             a softly glowing crest. 20 frames at 80 ms — calm, oceanic.",
+        build: wave,
     },
     PresetEntry {
-        id: "checkerboard-strobe",
-        display_name: "Checkerboard Strobe",
-        description: "4-frame inverted checkerboard at 300 ms per frame. Useful for \
-             checking refresh rate + pixel-perfect alignment on the GC9107 \
-             controller.",
-        build: checkerboard_strobe,
+        id: "spiral",
+        display_name: "Spiral",
+        description: "Rotating multi-arm spiral in magenta / cyan / yellow. 18 \
+             frames at 80 ms, smooth rotation. Hypnotic.",
+        build: spiral,
     },
 ];
 
@@ -323,99 +326,264 @@ fn sunset_vertical() -> TftAnimation {
     }
 }
 
-fn color_cycle_slow() -> TftAnimation {
-    let palette: [(u8, u8, u8); 6] = [
-        (0xFF, 0x40, 0x40), // red
-        (0xFF, 0xA0, 0x30), // orange
-        (0xF0, 0xE0, 0x40), // yellow
-        (0x40, 0xE0, 0x50), // green
-        (0x40, 0xA0, 0xFF), // blue
-        (0xB0, 0x40, 0xFF), // violet
-    ];
-    let frames = palette
-        .iter()
-        .map(|&(r, g, b)| solid_frame(r, g, b, 800))
-        .collect();
-    TftAnimation { frames }
+// ---------------------------------------------------------------------------
+// Eye-candy presets — replaced the v0.7 Color Cycle / Pulse / Scanline /
+// Checkerboard set, which Mario judged "sinnlose Frame-Animationen". The
+// new presets target the same 128 × 128 panel but produce content the
+// whole frame uses, so the upper-half-rendering bug (still unresolved as
+// of v0.8) is observable on every preset, not just one or two.
+// ---------------------------------------------------------------------------
+
+/// Centred 8-fold-symmetric radial pattern. Static — one frame, 250 ms.
+/// Built by computing polar coordinates (r, θ) for every pixel and
+/// mapping `(r, θ × 8)` to HSV → RGB. The 8-fold symmetry makes the
+/// pattern read as a kaleidoscope tile rather than a noisy gradient.
+fn mandala() -> TftAnimation {
+    let cx = TFT_WIDTH as f32 / 2.0 - 0.5;
+    let cy = TFT_HEIGHT as f32 / 2.0 - 0.5;
+    let max_r = (cx * cx + cy * cy).sqrt();
+    let frame = build_frame(
+        |x, y| {
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
+            let r = (dx * dx + dy * dy).sqrt();
+            let theta = dy.atan2(dx); // -π..π
+                                      // 8-fold symmetry: fold θ into [0..π/8) and reflect.
+            let folded = (theta * 4.0 / std::f32::consts::PI).rem_euclid(2.0);
+            let folded = if folded > 1.0 { 2.0 - folded } else { folded };
+            // Hue from radius: cycles roughly 2× across the panel for two
+            // colour rings.
+            let hue = (r / max_r * 720.0 + folded * 60.0) % 360.0;
+            let v = (1.0 - r / max_r).max(0.0).powf(0.6);
+            // Soft inner core: bright near the centre.
+            let v = (v + 0.15).min(1.0);
+            hsv_to_rgb(hue, 0.9, v)
+        },
+        250,
+    );
+    TftAnimation {
+        frames: vec![frame],
+    }
 }
 
-fn color_cycle_fast() -> TftAnimation {
-    // 12 evenly-spaced hues, full saturation.
-    let frames = (0..12)
-        .map(|i| {
-            let hue = i as f32 * (360.0 / 12.0);
-            let (r, g, b) = hsv_to_rgb(hue, 1.0, 1.0);
-            solid_frame(r, g, b, 250)
+/// "Matrix Rain" — green falling glyph trails on a black background.
+///
+/// 16 columns × 16 frames. Each column has a deterministic offset and
+/// speed (seeded from the column index) so the visual is repeatable
+/// across runs but every column still looks independent. Trails are 28
+/// pixels long, fading from bright cyan-green at the head to dark
+/// green at the tail. No glyph rasteriser yet — the "drops" are 8 px
+/// wide columns of solid colour. Reads as Matrix-ish at 0.85" viewing.
+fn matrix_rain() -> TftAnimation {
+    const COLS: u32 = 16;
+    const COL_W: u32 = TFT_WIDTH / COLS;
+    const FRAMES: usize = 16;
+    const TRAIL: u32 = 28;
+    const HEAD: (u8, u8, u8) = (0xB0, 0xFF, 0xC0);
+    const TAIL: (u8, u8, u8) = (0x00, 0x30, 0x10);
+
+    // Per-column metadata: (initial_offset, pixels-per-frame velocity).
+    // Mul-by-prime + modulus keeps the columns visually independent
+    // without an RNG dependency.
+    let cols: Vec<(u32, u32)> = (0..COLS)
+        .map(|c| {
+            let off = c.wrapping_mul(73) % (TFT_HEIGHT + TRAIL);
+            let speed = 4 + (c.wrapping_mul(11) % 6); // 4..10 px/frame
+            (off, speed)
         })
         .collect();
-    TftAnimation { frames }
-}
 
-fn pulse_at_hue(hue: f32) -> TftAnimation {
-    // 8 frames: brightness 0.2 → 1.0 → 0.2 (half-cosine).
-    let frames = (0..8)
-        .map(|i| {
-            let phase = i as f32 / 8.0;
-            let v = 0.2 + 0.8 * (0.5 - 0.5 * (phase * std::f32::consts::TAU).cos());
-            let (r, g, b) = hsv_to_rgb(hue, 1.0, v);
-            solid_frame(r, g, b, 150)
-        })
-        .collect();
-    TftAnimation { frames }
-}
-
-fn pulse_cyan() -> TftAnimation {
-    pulse_at_hue(180.0)
-}
-
-fn pulse_magenta() -> TftAnimation {
-    pulse_at_hue(300.0)
-}
-
-fn scanline_vertical() -> TftAnimation {
-    // Deep purple background with a moving 6-row bright line.
-    const BACKGROUND: (u8, u8, u8) = (0x20, 0x08, 0x40);
-    const LINE: (u8, u8, u8) = (0xC0, 0xFF, 0xFF);
-    const LINE_HEIGHT: u32 = 6;
-    let frames = (0..10)
-        .map(|i| {
-            let scan_y = (i * (TFT_HEIGHT / 10)) as i32; // moves top→bottom
+    let frames = (0..FRAMES)
+        .map(|f| {
+            // Snapshot head-y for each column at this frame.
+            let heads: Vec<i32> = cols
+                .iter()
+                .map(|&(off, sp)| {
+                    let raw = off + sp * f as u32;
+                    (raw % (TFT_HEIGHT + TRAIL * 2)) as i32 - TRAIL as i32
+                })
+                .collect();
             build_frame(
-                |_x, y| {
-                    let dy = (y as i32 - scan_y).rem_euclid(TFT_HEIGHT as i32);
-                    if dy >= 0 && dy < LINE_HEIGHT as i32 {
-                        LINE
-                    } else {
-                        BACKGROUND
+                |x, y| {
+                    let col = (x / COL_W) as usize;
+                    if col >= COLS as usize {
+                        return (0, 0, 0);
                     }
+                    let head_y = heads[col];
+                    let dy = head_y - y as i32; // positive = pixel is above head
+                    if dy < 0 || dy >= TRAIL as i32 {
+                        return (0, 0, 0);
+                    }
+                    let t = dy as f32 / TRAIL as f32;
+                    lerp_rgb(HEAD, TAIL, t)
                 },
-                160,
+                90,
             )
         })
         .collect();
     TftAnimation { frames }
 }
 
-fn checkerboard_strobe() -> TftAnimation {
-    // 4 frames: A, B, A, B. Patterns: 8×8 cells.
-    const CELL: u32 = 16;
-    let make = |invert: bool| -> TftFrame {
-        build_frame(
-            |x, y| {
-                let cell = ((x / CELL) + (y / CELL)) & 1;
-                let lit = (cell == 1) ^ invert;
-                if lit {
-                    (0xFF, 0xFF, 0xFF)
-                } else {
-                    (0x00, 0x00, 0x00)
-                }
-            },
-            300,
-        )
-    };
-    TftAnimation {
-        frames: vec![make(false), make(true), make(false), make(true)],
-    }
+/// Classic sum-of-sines plasma. Each pixel gets a hue from the sum of
+/// four sinusoids parameterised by position + time; saturation stays
+/// at full so the result reads as a morphing colour gradient.
+fn plasma() -> TftAnimation {
+    const FRAMES: usize = 20;
+    let frames = (0..FRAMES)
+        .map(|f| {
+            let t = f as f32 / FRAMES as f32 * std::f32::consts::TAU;
+            build_frame(
+                |x, y| {
+                    let fx = x as f32 / TFT_WIDTH as f32;
+                    let fy = y as f32 / TFT_HEIGHT as f32;
+                    // Four sinusoids in different directions, time-shifted.
+                    let v = (fx * 8.0 + t).sin()
+                        + (fy * 8.0 + t * 1.3).cos()
+                        + ((fx + fy) * 6.0 + t * 0.7).sin()
+                        + (((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt() * 16.0 + t * 1.7).cos();
+                    // Map v ∈ ~[-4, 4] to hue ∈ [0..360).
+                    let hue = ((v + 4.0) / 8.0 * 360.0).rem_euclid(360.0);
+                    hsv_to_rgb(hue, 0.9, 1.0)
+                },
+                70,
+            )
+        })
+        .collect();
+    TftAnimation { frames }
+}
+
+/// Starfield warp — ~80 stars positioned in polar coordinates, each
+/// frame advances their radius linearly. Stars wrap around to the
+/// centre once they exit the panel. Star brightness fades with radius
+/// so the centre stays a bit clearer than the edges.
+fn starfield() -> TftAnimation {
+    const FRAMES: usize = 18;
+    const STAR_COUNT: usize = 80;
+    let cx = TFT_WIDTH as f32 / 2.0 - 0.5;
+    let cy = TFT_HEIGHT as f32 / 2.0 - 0.5;
+    let max_r = (cx * cx + cy * cy).sqrt();
+
+    // Pre-compute star angles + initial radii deterministically.
+    let stars: Vec<(f32, f32, f32)> = (0..STAR_COUNT)
+        .map(|i| {
+            let i = i as u32;
+            let theta = (i.wrapping_mul(2654435761).wrapping_rem(1000) as f32 / 1000.0)
+                * std::f32::consts::TAU;
+            let r0 = (i.wrapping_mul(1597).wrapping_rem(1000) as f32 / 1000.0) * max_r;
+            let speed = 1.2 + (i.wrapping_mul(31).wrapping_rem(20) as f32 / 20.0) * 2.5;
+            (theta, r0, speed)
+        })
+        .collect();
+
+    let frames = (0..FRAMES)
+        .map(|f| {
+            // Each star's current radius this frame.
+            let positions: Vec<(f32, f32, f32)> = stars
+                .iter()
+                .map(|&(theta, r0, speed)| {
+                    let r = (r0 + speed * f as f32) % max_r;
+                    let px = cx + theta.cos() * r;
+                    let py = cy + theta.sin() * r;
+                    (px, py, r / max_r)
+                })
+                .collect();
+            build_frame(
+                |x, y| {
+                    // Pure black background plus per-star contribution. Each
+                    // star is a 1-pixel "core" so accumulation is unnecessary
+                    // — just paint stars at integer rounded positions.
+                    for &(px, py, t) in &positions {
+                        if (px.round() as u32 == x) && (py.round() as u32 == y) {
+                            let brightness = (1.0 - (t - 0.2).clamp(0.0, 1.0) * 0.6).max(0.4);
+                            let v = (brightness * 255.0) as u8;
+                            return (v, v, v);
+                        }
+                    }
+                    (0, 0, 0)
+                },
+                80,
+            )
+        })
+        .collect();
+    TftAnimation { frames }
+}
+
+/// Sine-wave drifting horizontally across a deep navy background, with
+/// a soft cyan glow at the crest. Animation moves the wave one cycle
+/// across in 20 frames at 80 ms = 1.6 s loop.
+fn wave() -> TftAnimation {
+    const FRAMES: usize = 20;
+    const BG: (u8, u8, u8) = (0x05, 0x0B, 0x20);
+    const CREST: (u8, u8, u8) = (0xA0, 0xF0, 0xFF);
+    const GLOW: (u8, u8, u8) = (0x20, 0x60, 0xA0);
+    let frames = (0..FRAMES)
+        .map(|f| {
+            let phase = f as f32 / FRAMES as f32 * std::f32::consts::TAU;
+            build_frame(
+                |x, y| {
+                    let fx = x as f32 / TFT_WIDTH as f32 * std::f32::consts::TAU * 2.0;
+                    let crest_y = TFT_HEIGHT as f32 / 2.0 + (fx + phase).sin() * 20.0;
+                    let dy = (y as f32 - crest_y).abs();
+                    if dy < 1.0 {
+                        CREST
+                    } else if dy < 6.0 {
+                        let t = (dy - 1.0) / 5.0;
+                        lerp_rgb(CREST, GLOW, t)
+                    } else if dy < 18.0 {
+                        let t = (dy - 6.0) / 12.0;
+                        lerp_rgb(GLOW, BG, t)
+                    } else {
+                        BG
+                    }
+                },
+                80,
+            )
+        })
+        .collect();
+    TftAnimation { frames }
+}
+
+/// Three-arm rotating spiral in magenta / cyan / yellow. Each pixel's
+/// colour comes from `((θ - r×k + t) × arms) % 1` which produces
+/// continuous rotating arms regardless of resolution.
+fn spiral() -> TftAnimation {
+    const FRAMES: usize = 18;
+    const ARMS: f32 = 3.0;
+    const TIGHTNESS: f32 = 8.0;
+    let cx = TFT_WIDTH as f32 / 2.0 - 0.5;
+    let cy = TFT_HEIGHT as f32 / 2.0 - 0.5;
+    let max_r = (cx * cx + cy * cy).sqrt();
+    let frames = (0..FRAMES)
+        .map(|f| {
+            let t = f as f32 / FRAMES as f32 * std::f32::consts::TAU;
+            build_frame(
+                |x, y| {
+                    let dx = x as f32 - cx;
+                    let dy = y as f32 - cy;
+                    let r = (dx * dx + dy * dy).sqrt() / max_r;
+                    let theta = dy.atan2(dx);
+                    // Arm position cycles 0..1 across each arm.
+                    let arm = ((theta + r * TIGHTNESS + t) * ARMS / std::f32::consts::TAU)
+                        .rem_euclid(1.0);
+                    // Three hues at 0°, 120°, 240° → magenta, cyan, yellow-ish.
+                    let hue = arm * 360.0 + 300.0; // start at magenta
+                    let v = 1.0 - r.min(1.0) * 0.4; // brighter near centre
+                    hsv_to_rgb(hue, 0.9, v)
+                },
+                80,
+            )
+        })
+        .collect();
+    TftAnimation { frames }
+}
+
+/// Linear interpolation between two RGB triples. `t = 0` → `a`,
+/// `t = 1` → `b`. Used by Matrix Rain head→tail fade and the Wave
+/// glow falloff.
+fn lerp_rgb(a: (u8, u8, u8), b: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
+    let t = t.clamp(0.0, 1.0);
+    let lerp = |x: u8, y: u8| ((x as f32) * (1.0 - t) + (y as f32) * t) as u8;
+    (lerp(a.0, b.0), lerp(a.1, b.1), lerp(a.2, b.2))
 }
 
 // ---------------------------------------------------------------------------

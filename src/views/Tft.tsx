@@ -131,7 +131,7 @@ export function Tft() {
       <PageHeader
         title="TFT Display"
         description={
-          "0.85\" 128×128 IPS panel above the knob. Pick a preset, upload a still / GIF, or restore the factory animation."
+          "Pick a preset, upload your own still / GIF, or restore the factory animation."
         }
         action={
           <div className="flex items-center gap-2">
