@@ -91,3 +91,12 @@ export interface AutomationRunResult {
   stderr: string;
   success: boolean;
 }
+
+/** Curated starter — template form (no id / timestamps). */
+export interface StarterAutomation {
+  name: string;
+  description: string;
+  kind: AutomationKind;
+  payload: string;
+  category: string;
+}

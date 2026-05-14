@@ -14,8 +14,10 @@ use tracing_subscriber::EnvFilter;
 
 mod automations;
 mod now_playing;
+mod starter_library;
 use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
+use starter_library::StarterAutomation;
 
 #[derive(Debug, thiserror::Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
@@ -327,6 +329,13 @@ async fn list_shortcuts() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Curated starter library — 15 ready-to-adopt examples so the
+/// Automations tab isn't a blank slate on first launch.
+#[tauri::command]
+fn get_starter_library() -> Vec<StarterAutomation> {
+    starter_library::library()
+}
+
 /// macOS Now-Playing snapshot — covers Music.app and Spotify desktop today.
 /// Returns the "nothing playing" sentinel on non-macOS or when nothing is
 /// playing, distinguishing both from infrastructure failure (which surfaces
@@ -425,6 +434,7 @@ pub fn run() {
             save_automations,
             run_automation,
             list_shortcuts,
+            get_starter_library,
         ])
         .setup(|app| {
             use tauri::Manager;

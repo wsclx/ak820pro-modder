@@ -16,6 +16,7 @@ import type {
   Automation,
   AutomationKind,
   AutomationRunResult,
+  StarterAutomation,
 } from "../types";
 
 const KIND_LABEL: Record<AutomationKind, string> = {
@@ -35,6 +36,8 @@ export function Automations() {
   const [items, setItems] = useState<Automation[] | null>(null);
   const [shortcuts, setShortcuts] = useState<string[] | null>(null);
   const [editing, setEditing] = useState<Automation | null>(null);
+  const [showLibrary, setShowLibrary] = useState(false);
+  const [starters, setStarters] = useState<StarterAutomation[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<Record<number, AutomationRunResult>>({});
@@ -67,6 +70,35 @@ export function Automations() {
     void refresh();
     void refreshShortcuts();
   }, [refresh, refreshShortcuts]);
+
+  async function openLibrary() {
+    if (starters === null) {
+      try {
+        const list = await invoke<StarterAutomation[]>("get_starter_library");
+        setStarters(list);
+      } catch (e) {
+        setErr(String(e));
+        return;
+      }
+    }
+    setShowLibrary(true);
+  }
+
+  async function adoptStarter(s: StarterAutomation) {
+    if (items === null) return;
+    const now = Date.now();
+    const fresh: Automation = {
+      id: now + Math.floor(Math.random() * 1000),
+      name: s.name,
+      description: s.description,
+      kind: s.kind,
+      payload: s.payload,
+      created_at: now,
+      updated_at: now,
+      marker_hid: null,
+    };
+    await persist([...items, fresh]);
+  }
 
   async function persist(next: Automation[]) {
     setBusy(true);
@@ -141,9 +173,14 @@ export function Automations() {
         title="Automations"
         description="Run AppleScripts, macOS Shortcuts, or shell commands from this app. Manual trigger today — a global-hotkey listener for keyboard-side triggers ships in v0.7."
         action={
-          <Button variant="primary" onClick={startCreate} disabled={busy}>
-            + New automation
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={openLibrary} disabled={busy}>
+              📚 Starter library
+            </Button>
+            <Button variant="primary" onClick={startCreate} disabled={busy}>
+              + New automation
+            </Button>
+          </div>
         }
       />
 
@@ -154,10 +191,18 @@ export function Automations() {
       ) : items.length === 0 ? (
         <Card>
           <div className="py-6 text-center">
-            <p className="text-sm text-fg-2">
-              Your library is empty. Click <b>+ New automation</b> to add an
-              AppleScript, a macOS Shortcut, or a shell command.
+            <p className="mb-4 text-sm text-fg-2">
+              Your library is empty. Browse the starter library for 15 ready-made
+              examples, or build your own from scratch.
             </p>
+            <div className="flex justify-center gap-2">
+              <Button variant="primary" onClick={openLibrary}>
+                📚 Browse starter library
+              </Button>
+              <Button variant="ghost" onClick={startCreate}>
+                Build from scratch
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (
@@ -182,6 +227,15 @@ export function Automations() {
           shortcuts={shortcuts ?? []}
           onCancel={() => setEditing(null)}
           onSave={(a) => void commitEdit(a)}
+        />
+      )}
+
+      {showLibrary && starters && (
+        <StarterLibraryModal
+          starters={starters}
+          onClose={() => setShowLibrary(false)}
+          onAdopt={(s) => void adoptStarter(s)}
+          busy={busy}
         />
       )}
     </>
@@ -436,6 +490,118 @@ function Field({
     <div>
       <label className="kicker mb-1 block">{label}</label>
       {children}
+    </div>
+  );
+}
+
+/* -------------------------------- starter-library picker modal -- */
+
+function StarterLibraryModal({
+  starters,
+  onClose,
+  onAdopt,
+  busy,
+}: {
+  starters: StarterAutomation[];
+  onClose: () => void;
+  onAdopt: (s: StarterAutomation) => void;
+  busy: boolean;
+}) {
+  // Group by category, preserving the order they ship in.
+  const grouped = useMemo(() => {
+    const groups: { name: string; entries: StarterAutomation[] }[] = [];
+    for (const s of starters) {
+      let g = groups.find((x) => x.name === s.category);
+      if (!g) {
+        g = { name: s.category, entries: [] };
+        groups.push(g);
+      }
+      g.entries.push(s);
+    }
+    return groups;
+  }, [starters]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-8"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col rounded-lg border border-line bg-surface-elevated shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center justify-between border-b border-line px-5 pb-3 pt-4">
+          <div>
+            <h2 className="text-base font-medium text-fg-0">Starter library</h2>
+            <p className="mt-0.5 text-xs text-fg-3">
+              {starters.length} curated examples. Click <b>Add</b> to copy one
+              into your library — edit afterwards.
+            </p>
+          </div>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+        </header>
+
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+          {grouped.map((g) => (
+            <section key={g.name}>
+              <h3 className="kicker mb-2">{g.name}</h3>
+              <div className="space-y-2">
+                {g.entries.map((s, idx) => (
+                  <StarterRow
+                    key={`${g.name}-${idx}`}
+                    starter={s}
+                    onAdopt={() => onAdopt(s)}
+                    busy={busy}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StarterRow({
+  starter,
+  onAdopt,
+  busy,
+}: {
+  starter: StarterAutomation;
+  onAdopt: () => void;
+  busy: boolean;
+}) {
+  const [showPayload, setShowPayload] = useState(false);
+  return (
+    <div className="rounded-md border border-line bg-surface-base px-3 py-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-fg-0">{starter.name}</span>
+            <Badge tone="neutral">{KIND_LABEL[starter.kind]}</Badge>
+          </div>
+          <p className="mt-0.5 text-xs text-fg-2">{starter.description}</p>
+        </div>
+        <Button size="sm" variant="primary" onClick={onAdopt} disabled={busy}>
+          Add
+        </Button>
+      </div>
+      <button
+        onClick={() => setShowPayload((v) => !v)}
+        className="mt-1.5 text-[10px] uppercase tracking-wider text-fg-3 hover:text-fg-1"
+      >
+        {showPayload ? "Hide" : "Show"} payload
+      </button>
+      {showPayload && (
+        <pre className="mt-2 overflow-x-auto rounded-sm border border-line/60 bg-surface-elevated/40 p-2 font-mono text-[11px] leading-snug text-fg-1">
+          {starter.payload}
+        </pre>
+      )}
     </div>
   );
 }
