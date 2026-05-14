@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Badge, BatteryBar, Button, Card, ErrorBanner, KVList, Mono, formatInt, hex4 } from "../components/ui";
 import { PageHeader } from "../components/Layout";
 import { NowPlayingCard } from "../components/NowPlayingCard";
+import { formatError } from "../errors";
 
 interface DeviceInfoReport {
   rom_size: number;
@@ -68,7 +69,7 @@ export function System() {
       const g = await invoke<GameMode>("get_game_mode");
       setGm(g);
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -91,7 +92,7 @@ export function System() {
         setErr(`Set sleep_time=${value} but keyboard reports ${readback.sleep_time}`);
       }
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }

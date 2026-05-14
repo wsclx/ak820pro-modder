@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, Card, Mono } from "./ui";
 import type { NowPlaying } from "../types";
+import { formatError } from "../errors";
 
 const POLL_MS = 2000;
 
@@ -31,7 +32,7 @@ export function NowPlayingCard() {
         setErr(null);
       }
     } catch (e) {
-      if (alive.current) setErr(String(e));
+      if (alive.current) setErr(formatError(e));
     }
   }, []);
 

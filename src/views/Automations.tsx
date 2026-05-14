@@ -18,6 +18,7 @@ import type {
   AutomationRunResult,
   StarterAutomation,
 } from "../types";
+import { formatError } from "../errors";
 
 const KIND_LABEL: Record<AutomationKind, string> = {
   apple_script: "AppleScript",
@@ -51,7 +52,7 @@ export function Automations() {
       const list = await invoke<Automation[]>("list_automations");
       setItems(list);
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -77,7 +78,7 @@ export function Automations() {
         const list = await invoke<StarterAutomation[]>("get_starter_library");
         setStarters(list);
       } catch (e) {
-        setErr(String(e));
+        setErr(formatError(e));
         return;
       }
     }
@@ -107,7 +108,7 @@ export function Automations() {
       await invoke("save_automations", { list: next });
       setItems(next);
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -120,7 +121,7 @@ export function Automations() {
       const r = await invoke<AutomationRunResult>("run_automation", { id });
       setLastRun((prev) => ({ ...prev, [id]: r }));
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }

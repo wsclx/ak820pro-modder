@@ -10,6 +10,7 @@ import {
   type ActionEntry,
   type ActionGroup,
 } from "../data/action-catalog";
+import { formatError } from "../errors";
 
 // Mirrors `KeyAction` from `ak820_protocol::commands::keymap`.
 type KeyAction =
@@ -162,7 +163,7 @@ export function Keymap() {
         setFnDraft(km);
       }
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -179,7 +180,7 @@ export function Keymap() {
       if (layer === "base") { setBaseRemote(verify); setBaseDraft(verify); }
       else { setFnRemote(verify); setFnDraft(verify); }
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }

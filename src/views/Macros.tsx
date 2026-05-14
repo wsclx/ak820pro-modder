@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { PageHeader } from "../components/Layout";
 import { Badge, Button, Card, ErrorBanner, Mono } from "../components/ui";
+import { formatError } from "../errors";
 
 /* ----------------------------------------------------------------- types -- */
 
@@ -143,7 +144,7 @@ export function Macros() {
         return next;
       });
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -303,7 +304,7 @@ export function Macros() {
       await invoke("set_macros", { macros: payload });
       await refresh();
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }

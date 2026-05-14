@@ -25,6 +25,7 @@ import type {
   ApplyPresetReport,
   Preset,
 } from "../types";
+import { formatError } from "../errors";
 
 export function Presets() {
   const [presets, setPresets] = useState<Preset[] | null>(null);
@@ -37,7 +38,7 @@ export function Presets() {
   useEffect(() => {
     invoke<Preset[]>("list_presets")
       .then(setPresets)
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(formatError(e)));
   }, []);
 
   const categories = useMemo(() => {
@@ -63,7 +64,7 @@ export function Presets() {
       setLastReport({ preset, report });
       setReviewing(null);
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }

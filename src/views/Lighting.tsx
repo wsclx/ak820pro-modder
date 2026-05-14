@@ -4,6 +4,7 @@ import type { Direction, LightingConfig, LightingModeInfo } from "../types";
 import { Badge, Button, Card, ErrorBanner, Slider, Toggle } from "../components/ui";
 import { PageHeader } from "../components/Layout";
 import { CustomLightingPaint } from "./CustomLightingPaint";
+import { formatError } from "../errors";
 
 const ALL_DIRECTIONS: Direction[] = ["left", "down", "up", "right"];
 const APPLY_DEBOUNCE_MS = 80;
@@ -32,7 +33,7 @@ export function Lighting() {
   useEffect(() => {
     invoke<LightingModeInfo[]>("list_lighting_modes")
       .then(setModes)
-      .catch((e) => setErr(String(e)));
+      .catch((e) => setErr(formatError(e)));
   }, []);
 
   const currentMode = useMemo(
@@ -52,7 +53,7 @@ export function Lighting() {
       await invoke("apply_lighting", { config: next });
       setLastApplied(new Date().toLocaleTimeString());
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
       inflight.current = false;

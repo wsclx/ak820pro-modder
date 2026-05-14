@@ -483,16 +483,35 @@ markers attached to deleted automations only until the next save.
 If a user complains "F-something doesn't type anymore", check the
 Automations tab for a binding using that marker.
 
-### 6.9d macOS-14 CI shadowed `cargo` with brew's `rustup-init` shim
-On macos-14 ARM runners, `setup-node` and `pnpm/action-setup` re-prepend
-`/opt/homebrew/bin` to `PATH` *after* the Rust toolchain install. Brew's
-`cargo` symlink at `/opt/homebrew/bin/cargo` resolves to `rustup-init`,
-which has no `metadata` subcommand and emits "unexpected argument" —
-exactly what `tauri build`'s internal `cargo metadata` call surfaces. The
-Tauri-bundle CI job now explicitly prepends `$HOME/.cargo/bin` and runs
-`which cargo` / `cargo --version` validation right before `tauri:build`
-so future regressions surface at the diagnostic step, not 4 minutes deep
-inside a release build.
+### 6.9d macOS-14 CI shadowed `cargo` with `rustup-init` (two layers)
+**Layer 1 (PATH shadow):** On macos-14 ARM runners, `setup-node` and
+`pnpm/action-setup` re-prepend `/opt/homebrew/bin` to `PATH` *after* the
+Rust toolchain install. Brew's `cargo` symlink at `/opt/homebrew/bin/cargo`
+resolves to `rustup-init`, which has no `metadata` subcommand and emits
+"unexpected argument" — exactly what `tauri build`'s internal `cargo
+metadata` call surfaces.
+
+**Layer 2 (cache poison):** Swatinem/rust-cache@v2 caches `~/.cargo/bin/`
+by default. If a previous run ever leaked rustup-init into that directory,
+every subsequent run *restores* the bad binary on top of the freshly-installed
+cargo from `dtolnay/rust-toolchain`. `which cargo` still returns
+`~/.cargo/bin/cargo` (the "right" path!) but the binary itself is rustup-init.
+This is what broke the 0.6.0-beta release run despite the PATH fix being
+in place.
+
+Fix in the workflow: pass `cache-bin: false` + `prefix-key: v1-rust` to
+Swatinem/rust-cache, and run a `Verify Rust toolchain` step that fails
+loudly if `cargo --version` ever contains "rustup-init" again. Cache
+delete via `gh cache delete <id>` if you suspect poisoning.
+
+### 6.9e Frontend error banners showing "[object Object]"
+The Rust `AppError` is `#[derive(Serialize)]` with
+`#[serde(tag = "kind", content = "message")]`, so Tauri rejects with an
+*object* `{ kind: "Protocol", message: "..." }`. Doing `setErr(String(e))`
+on that object yields the literal string `"[object Object]"` — which is
+what System, Macros, and Keymap views were showing on every failure.
+Always go through `src/errors.ts → formatError(e)` in view code, never
+`String(e)`. Lint-rule candidate but currently policed by code review.
 
 ### 6.9 Keymap action-page enum `O` values (mismatch landmine)
 The official enum is:

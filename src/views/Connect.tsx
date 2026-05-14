@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { DeviceInfo, ProbeReport } from "../types";
 import { Badge, Button, Card, ErrorBanner, KVList, Mono, hex4, prettyProduct } from "../components/ui";
 import { PageHeader } from "../components/Layout";
+import { formatError } from "../errors";
 
 const CONTROL_USAGE_PAGE = 0xff68;
 
@@ -24,7 +25,7 @@ export function Connect({ onReconnect }: { onReconnect?: () => void }) {
         setProbe(null);
       }
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }

@@ -24,6 +24,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Badge, Button, Card, ErrorBanner, Mono } from "../components/ui";
 import { ISO_DE_LAYOUT_ROWS, type PhysicalKey } from "../data/layouts";
 import type { CustomLedMap, LedColor, LightingConfig } from "../types";
+import { formatError } from "../errors";
 
 interface Props {
   /** Brightness + speed from the parent Lighting view — unused by the
@@ -61,7 +62,7 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
       setRemote(m);
       setDraft(m.leds.map((c) => ({ ...c })));
     } catch (e) {
-      setErr(String(e));
+      setErr(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -91,7 +92,7 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
         });
         setLastApplied(new Date().toLocaleTimeString());
       } catch (e) {
-        setErr(String(e));
+        setErr(formatError(e));
       } finally {
         setBusy(false);
         inflight.current = false;
