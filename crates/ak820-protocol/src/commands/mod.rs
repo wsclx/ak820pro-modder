@@ -15,6 +15,7 @@ pub mod per_key_rgb;
 pub mod sleep;
 pub mod system;
 pub mod tft;
+pub mod tft_presets;
 
 pub use keymap::{KeyAction, Keymap, Page as KeyPage, KEYMAP_BYTES};
 pub use macros::{

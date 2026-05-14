@@ -4,6 +4,7 @@ use ak820_protocol::{
     commands::macros::{Macro, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO},
     commands::per_key_rgb::CustomLedMap,
     commands::system::{DeviceInfoReport, GameMode, SleepPreset, SLEEP_PRESETS},
+    commands::tft_presets::{self, TftPresetInfo},
     device::ProbeReport,
     Connection, DeviceInfo,
 };
@@ -925,6 +926,51 @@ async fn icloud_sync_pull(app: AppHandle) -> Result<Option<u64>, AppError> {
     Ok(result)
 }
 
+/* ------------------------------------------------- TFT presets (Phase 5c) --
+ *
+ * Two commands the TFT view uses:
+ *   list_tft_presets    - returns the static catalogue (id, name, desc,
+ *                         frame count, total ms). No device touched.
+ *   apply_tft_preset    - builds the named animation, opens the 0xFF67 HID
+ *                         interface, and uploads via the chunked-write path.
+ *                         Drops the dedicated TFT handle on return — TFT
+ *                         transfers are one-shot, no need to cache.
+ *
+ * The dedicated TFT interface is *not* the same handle as the `ConnState`
+ * control connection (0xFF68). Both can be open concurrently. We open +
+ * close per upload because TFT writes are infrequent compared to lighting
+ * / keymap interactions.
+ */
+
+#[tauri::command]
+fn list_tft_presets() -> Vec<TftPresetInfo> {
+    tft_presets::catalogue()
+}
+
+#[tauri::command]
+async fn apply_tft_preset(id: String) -> Result<(), AppError> {
+    // Build the animation off-thread — pixel generation for the busier
+    // presets (scanline, checkerboard) does a ~half-megabyte of allocation
+    // and we don't want to block the tokio worker on that.
+    let id_for_build = id.clone();
+    let anim = tokio::task::spawn_blocking(move || tft_presets::build(&id_for_build))
+        .await
+        .map_err(|e| AppError::Protocol(format!("join build: {e}")))?
+        .ok_or_else(|| AppError::Protocol(format!("unknown TFT preset id: {id}")))?;
+
+    // Open the TFT HID interface, upload, drop. spawn_blocking again
+    // because hidapi I/O is synchronous and the chunked transfer can take
+    // tens of milliseconds for animated presets.
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let tft = Connection::open_tft().map_err(AppError::from)?;
+        tft.upload_tft_animation(&anim).map_err(AppError::from)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Protocol(format!("join upload: {e}")))??;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -985,6 +1031,8 @@ pub fn run() {
             icloud_sync_status,
             icloud_sync_push,
             icloud_sync_pull,
+            list_tft_presets,
+            apply_tft_preset,
         ])
         .setup(|app| {
             use tauri::Manager;

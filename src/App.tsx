@@ -7,6 +7,7 @@ import { Lighting } from "./views/Lighting";
 import { Macros } from "./views/Macros";
 import { Presets } from "./views/Presets";
 import { System } from "./views/System";
+import { Tft } from "./views/Tft";
 import { ICLOUD_SYNC_ENABLED_KEY } from "./components/SyncCard";
 import {
   Layout,
@@ -41,7 +42,7 @@ const NAV: NavItem<Tab>[] = [
   { id: "macros", label: "Macros", icon: <Macro {...ICON_PROPS} /> },
   { id: "automations", label: "Automations", icon: <Automation {...ICON_PROPS} /> },
   { id: "presets", label: "Presets", icon: <Preset {...ICON_PROPS} /> },
-  { id: "tft", label: "TFT Display", icon: <Screen {...ICON_PROPS} />, comingSoon: true },
+  { id: "tft", label: "TFT Display", icon: <Screen {...ICON_PROPS} /> },
 ];
 
 interface ProbeReport {
@@ -117,6 +118,7 @@ export default function App() {
       {tab === "macros" && <Macros />}
       {tab === "automations" && <Automations />}
       {tab === "presets" && <Presets />}
+      {tab === "tft" && <Tft />}
     </Layout>
   );
 }
