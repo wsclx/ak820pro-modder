@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "ak820-audio-reactive"
-version = "0.6.0-beta"
+version = "0.7.0-beta"
 dependencies = [
  "realfft",
  "screencapturekit",
@@ -29,7 +29,7 @@ dependencies = [
 
 [[package]]
 name = "ak820-cli"
-version = "0.6.0-beta"
+version = "0.7.0-beta"
 dependencies = [
  "ak820-audio-reactive",
  "ak820-protocol",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "ak820-protocol"
-version = "0.6.0-beta"
+version = "0.7.0-beta"
 dependencies = [
  "hex",
  "hidapi",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "ak820pro-app"
-version = "0.6.0-beta"
+version = "0.7.0-beta"
 dependencies = [
  "ak820-audio-reactive",
  "ak820-protocol",

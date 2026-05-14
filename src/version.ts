@@ -4,7 +4,7 @@
  * — keep them in lockstep.
  */
 
-export const APP_VERSION = "0.6.0-beta";
+export const APP_VERSION = "0.7.0-beta";
 export const APP_AUTHOR = "wsclx";
 export const APP_HOMEPAGE = "https://github.com/wsclx/ak820pro-modder";
 
