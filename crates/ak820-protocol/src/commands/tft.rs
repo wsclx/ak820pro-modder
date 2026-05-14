@@ -59,11 +59,16 @@ pub const DELAY_UNIT_MS: u16 = 5;
 ///
 /// Layout:
 /// ```text
-/// [0xAA, cmd, idx_lo, idx_hi, total_lo, total_hi, 0x4F, 0x06]
+/// [0xAA, cmd, idx_lo, idx_hi, total_lo, total_hi, 0x50, 0x06]
 /// ```
-/// The trailing two bytes form `0x064F` — a magic value derived from
-/// `6619136 / 4096` in the JS source and appears to identify the payload
-/// class (per-pixel vs per-LED frames share the same cmd byte path).
+///
+/// The trailing two bytes form `0x0650` (= 1616 decimal) — a magic
+/// derived from `6619136 / 4096` in the official AJAZZ web driver. The
+/// 1616 is **exact**; an off-by-one (we shipped 0x064F = 1615 up to
+/// v0.7.0-beta) makes the firmware accept the upload but never switch
+/// the display from its built-in animation to user content. Mario
+/// observed this on hardware. Decoded from the web driver's
+/// `setTftUserAnimation` body — see `docs/PROTOCOL.md` for the trail.
 pub fn build_tft_header(cmd: u8, chunk_idx: u16, total_chunks: u16) -> [u8; 8] {
     [
         0xAA,
@@ -72,7 +77,7 @@ pub fn build_tft_header(cmd: u8, chunk_idx: u16, total_chunks: u16) -> [u8; 8] {
         ((chunk_idx >> 8) & 0xFF) as u8,
         (total_chunks & 0xFF) as u8,
         ((total_chunks >> 8) & 0xFF) as u8,
-        0x4F,
+        0x50,
         0x06,
     ]
 }
@@ -272,8 +277,8 @@ mod tests {
     #[test]
     fn chunk_header_layout() {
         let h = build_tft_header(80, 0, 1);
-        assert_eq!(h, [0xAA, 80, 0, 0, 1, 0, 0x4F, 0x06]);
+        assert_eq!(h, [0xAA, 80, 0, 0, 1, 0, 0x50, 0x06]);
         let h2 = build_tft_header(80, 0x1234, 0x05);
-        assert_eq!(h2, [0xAA, 80, 0x34, 0x12, 0x05, 0, 0x4F, 0x06]);
+        assert_eq!(h2, [0xAA, 80, 0x34, 0x12, 0x05, 0, 0x50, 0x06]);
     }
 }

@@ -180,9 +180,13 @@ byte 2 = chunkIndex & 0xFF
 byte 3 = chunkIndex >> 8
 byte 4 = totalChunks & 0xFF
 byte 5 = totalChunks >> 8
-byte 6 = 0x4F          // payload-class magic — JS: (6619136/4096)&0xFF = 0x4F
-byte 7 = 0x06          //                       (6619136/4096)>>8   = 0x06
-                        // i.e. constant 0x064F = 1615 LE u16
+byte 6 = 0x50          // payload-class magic — JS: (6619136/4096) & 0xFF = 0x50
+byte 7 = 0x06          //                       (6619136/4096) >> 8   = 0x06
+                        // i.e. constant 0x0650 = 1616 LE u16.
+                        // **0.7.0-beta shipped 0x064F by mistake** — the
+                        // firmware accepted the upload but never switched
+                        // the display from its built-in animation. 0.8.x
+                        // restores the correct magic. See HANDOFF § 6.9h.
 ```
 
 - **Chunk payload size**: read from `device.collections[0].outputReports[0].items[0].reportCount` (the HID descriptor field). Defaults to **4104 bytes** if the descriptor is unavailable → payload = 4104 − 8 (header) = **4096 bytes** per chunk.

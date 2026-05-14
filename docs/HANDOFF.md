@@ -585,6 +585,47 @@ wire audio-reactive into the Tauri app, the same recipe needs to land
 in `src-tauri/build.rs` — Cargo doesn't share `rustc-link-arg` across
 the workspace.
 
+### 6.9h TFT chunk magic was off-by-one — 0x064F vs 0x0650
+The 8-byte chunk header for `SET_TFT_USER_ANIMATION` ends in a magic
+2-byte constant the firmware uses to validate the payload class. Up
+to v0.7.0-beta we shipped `0x064F` (= 1615 LE u16); the AJAZZ web
+driver actually sends `0x0650` (= 1616 LE u16), derived from
+`6619136 / 4096`. Mario's hardware accepted our upload silently but
+**never switched the display from its built-in animation to user
+content** — exactly the visibility issue Phase 5b has been tracking
+since 0.5.0-beta. The pcap path remains a stronger ground truth,
+but this single-byte fix is consistent with what the web driver
+sends and should at least unblock the activation step.
+
+Decoded from the web-driver via grep + Python bracket-matching
+extraction (see commit `382d59c..HEAD`). Also surfaced two related
+findings worth noting here:
+
+* `SET_TFT_USER_ANIMATION` chunks are ack'd with cmd **65**
+  (`SET_LED_USER_ANIMATION`), not cmd 80. Our send path is
+  fire-and-forget so we don't currently consume the ack — if we
+  add per-chunk response reading later, filter on cmd 65 for these
+  uploads.
+* The AJAZZ tool also exposes `setTftDateTime` (10 B payload via
+  cmd **52** `SET_TEMPORARY_COMMAND_DATA`) and `setTftScreenInfo`
+  (24 B payload via the same cmd) — these push live data into the
+  firmware's existing date/stats overlays, not new animations.
+  Not yet implemented in our codebase; just constants reserved.
+
+### 6.9i Knob remap is firmware-fixed on this hardware (confirmed)
+Re-checked with the web-driver: the `wheelKeys` array on the AK820
+Pro comes back **empty** when the AJAZZ tool reads the device. The
+web tool has a full editor UI for wheel keys (`xk` Vue component,
+right-click context menu, `setKeyData` plumbing), but the AK820 Pro
+firmware just doesn't expose the wheel slot indices for remap. The
+knob stays at Volume + / − / Mute (consumer HID 233 / 234 / 226)
+no matter what we send over the standard `SET_KEY` (cmd 34) path.
+
+Host-side workaround (not implemented): use Karabiner-Elements to
+remap consumer HID 233/234/226 to F13/F14/F15, then bind those F
+keys in the Automations tab. That gives the user a "configurable
+knob" without the device cooperating.
+
 ### 6.9 Keymap action-page enum `O` values (mismatch landmine)
 The official enum is:
 `0 DEFAULT, 1 MOUSE, 2 KEYBOARD, 3 CONSUMER_KEY, 4 SYSTEM_KEY,`

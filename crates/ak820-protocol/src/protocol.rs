@@ -51,6 +51,17 @@ pub mod cmd {
     pub const GET_DEFAULT_FN_KEY_MATRIX: u8 = 28;
     pub const GET_DEFAULT_KEY_MATRIX: u8 = 31;
     pub const SET_LED_BOOT_ANIMATION: u8 = 64;
+    /// Used both for setting LED user animations *and* — per the web
+    /// driver's `setTftUserAnimation` — as the **`responseCmd`** the
+    /// firmware sends back as it ack's TFT chunks. Don't ask. Documented
+    /// in `docs/PROTOCOL.md` § TFT activation.
+    pub const SET_LED_USER_ANIMATION: u8 = 65;
+    /// Marker / "is alive" / scratchpad command. Web driver uses this
+    /// for `setTftDateTime` (10-byte payload, position-encoded subcmd
+    /// at byte [1]) and `setTftScreenInfo` (24-byte payload, marker at
+    /// byte [6]). Not yet used by our codebase — added so adapters can
+    /// reach it without re-deriving the value.
+    pub const SET_TEMPORARY_COMMAND_DATA: u8 = 52;
     pub const SET_TFT_USER_ANIMATION: u8 = 80;
     pub const SET_TFT_BUILT_IN_INDEX: u8 = 81;
 }
