@@ -24,6 +24,14 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ~/.cargo/bin — the macos-14-arm64 image ships a brew
+          # rustup-init proxy that can leak into ~/.cargo/bin and then get
+          # baked into the cache. On restore, the freshly-installed cargo
+          # is overwritten by a rustup-init that doesn't understand
+          # `cargo metadata`, breaking `tauri build`. See bundle job below.
+          cache-bin: false
+          prefix-key: v1-rust
 
       # The Tauri shell's `generate_context!()` proc-macro reads tauri.conf.json
       # at compile time and verifies `frontendDist` actually exists. So we have
@@ -83,6 +91,17 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # macos-14-arm64 ships a brew rustup-init proxy. If it ever lands
+          # in ~/.cargo/bin (e.g. shadowed install ordering), Swatinem will
+          # cache that bad binary and every restore overwrites the cargo
+          # dtolnay/rust-toolchain just installed — so `which cargo` looks
+          # right but `cargo --version` reports rustup-init, and Tauri's
+          # `cargo metadata` call fails with "unexpected argument 'metadata'".
+          # Skip caching ~/.cargo/bin entirely and re-install on every run;
+          # rustup install is ~10s, not worth caching.
+          cache-bin: false
+          prefix-key: v1-rust
 
       - uses: pnpm/action-setup@v4
         with:
@@ -93,19 +112,19 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # macos-14 (ARM) runners have a brew-installed cargo at
-      # /opt/homebrew/bin/cargo that's actually a rustup-init shim. When
-      # setup-node and pnpm/action-setup run *after* the Rust install, they
-      # can re-prepend /opt/homebrew/bin to PATH, shadowing the real cargo
-      # at ~/.cargo/bin/cargo. The Tauri CLI then calls "cargo metadata"
-      # and gets back "unexpected argument 'metadata'" from rustup-init.
-      # Pin our cargo path to the front of PATH so this can't happen.
-      - name: Pin Rust toolchain to PATH front
+      # Sanity-check the toolchain after every other action has finished
+      # mutating PATH and CARGO_HOME. If cargo here ever prints rustup-init,
+      # bail loudly so we don't waste minutes on a tauri build that will
+      # crash the same way.
+      - name: Verify Rust toolchain
         run: |
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           which cargo
           cargo --version
           rustc --version
+          cargo --version | grep -q rustup-init && {
+            echo "::error::cargo at $(which cargo) is rustup-init, not real cargo"
+            exit 1
+          } || true
 
       - run: pnpm install --frozen-lockfile
 
