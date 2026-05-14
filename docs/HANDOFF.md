@@ -373,9 +373,9 @@ runtime freezes (white screen, Mac beachball).
 - App-level polling only calls `probe_device`; view-level reads only
   fire on mount.
 
-**Eventual hardening (not done):** switch `ConnState` to
-`tokio::sync::Mutex` and make the commands `async fn` so awaits don't
-block worker threads.
+**Hardening landed in 0.5.0-beta:** `ConnState` now uses
+`tokio::sync::Mutex` and every HID-touching Tauri command is
+`async fn`. The lock yields the *task*, not the worker thread.
 
 ### 6.4 Tauri 2 needs an explicit native macOS menu for ⌘+R
 Out of the box there's no menu, so ⌘+R does nothing and ⌘+Alt+I
@@ -503,6 +503,32 @@ Fix in the workflow: pass `cache-bin: false` + `prefix-key: v1-rust` to
 Swatinem/rust-cache, and run a `Verify Rust toolchain` step that fails
 loudly if `cargo --version` ever contains "rustup-init" again. Cache
 delete via `gh cache delete <id>` if you suspect poisoning.
+
+### 6.9f Stale HID handle survives unplug — auto-reconnect lives in `ConnState::with`
+After a USB unplug, hidapi keeps returning "Device is disconnected" for
+every subsequent call against the **cached** `Connection` in
+`ConnState`. The handle is dead, but the slot still says `Some`, so
+re-plugging doesn't help on its own — every action keeps hitting the
+zombie handle.
+
+The fix is centralised in `src-tauri/src/lib.rs::ConnState::with()`:
+if a *cached* connection returns an error whose message contains
+`disconnected`, `Device not found`, or `HID error`, the slot is cleared
+and the closure runs **once more**. The retry re-enters `ensure_open()`
+which re-enumerates and opens fresh. So after a re-plug the very next
+user action (Refresh, View switch, anything) succeeds transparently —
+no need for a dedicated Reconnect button or two clicks.
+
+The retry is gated by `had_cached_conn` so a *first* `open_control()`
+failure on an empty slot doesn't double-pay latency when the device
+genuinely isn't there. All closures in the file take their inputs by
+reference (`&keymap`, `&map`, …), so `FnMut` is sound; if you ever add
+a `with(move |slot| …)` that consumes an owned value, you'll get a
+loud "value moved" compile error to force you to clone or rethink.
+
+`apply_lighting` used to carry its own hand-rolled retry loop. That's
+been removed — the generic retry in `ConnState::with` covers it now,
+and keeping per-command loops would diverge in subtle ways.
 
 ### 6.9e Frontend error banners showing "[object Object]"
 The Rust `AppError` is `#[derive(Serialize)]` with

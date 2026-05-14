@@ -161,13 +161,48 @@ impl ConnState {
     /// sync because the underlying `hidapi` I/O is blocking — that's
     /// acceptable because we hold the mutex for short bursts and the
     /// concurrent runtime can still progress other tasks.
-    async fn with<R, F>(&self, f: F) -> Result<R, AppError>
+    ///
+    /// **Auto-reconnect**: if a *cached* `Connection` returns a stale-handle
+    /// error (device unplugged, USB sleep, hidapi handle invalidated), the
+    /// slot is cleared and the closure runs once more. The retry re-enters
+    /// `ensure_open()`, which re-enumerates and re-opens the HID device —
+    /// so the first action after a re-plug succeeds transparently without
+    /// the user having to click Refresh twice.
+    ///
+    /// We require `FnMut` (not `FnOnce`) for this. All current call sites
+    /// borrow their inputs (`&keymap`, `&map`, etc.) rather than consuming
+    /// them, so the closure can be called twice without lifetime issues.
+    async fn with<R, F>(&self, mut f: F) -> Result<R, AppError>
     where
-        F: FnOnce(&mut Option<Connection>) -> Result<R, AppError>,
+        F: FnMut(&mut Option<Connection>) -> Result<R, AppError>,
     {
         let mut guard = self.0.lock().await;
-        f(&mut guard)
+        let had_cached_conn = guard.is_some();
+        match f(&mut guard) {
+            Ok(v) => Ok(v),
+            Err(err) if had_cached_conn && is_stale_handle_error(&err) => {
+                // The cached HID handle is no good. Drop it and retry once
+                // with a fresh open — covers unplug/replug and macOS sleep
+                // wake-up where hidapi returns "Device is disconnected".
+                tracing::info!(?err, "stale HID handle, clearing slot and retrying once");
+                *guard = None;
+                f(&mut guard)
+            }
+            Err(err) => Err(err),
+        }
     }
+}
+
+/// Pattern-match on the stringified error to decide whether the cached HID
+/// handle is suspect. Errors raised by `Connection::open_control()` itself
+/// (i.e. when the slot was already empty) shouldn't trigger a retry — the
+/// caller in [`ConnState::with`] gates this with `had_cached_conn`.
+fn is_stale_handle_error(err: &AppError) -> bool {
+    let AppError::Protocol(msg) = err;
+    // hidapi wraps platform errors with a "HID error: …" prefix, the body
+    // typically mentions "disconnected" or "Device not found" depending
+    // on which call (read / write / re-enumeration) tripped first.
+    msg.contains("disconnected") || msg.contains("Device not found") || msg.contains("HID error")
 }
 
 fn ensure_open(slot: &mut Option<Connection>) -> Result<&Connection, AppError> {
@@ -739,21 +774,11 @@ async fn apply_lighting(
     state: State<'_, ConnState>,
     config: LightingConfig,
 ) -> Result<(), AppError> {
+    // Stale-handle retry is now handled generically by `ConnState::with`.
     state
         .with(|slot| {
-            // Retry once if the cached handle has gone stale (e.g. unplug/replug).
-            for attempt in 0..2 {
-                let conn = ensure_open(slot)?;
-                match conn.set_lighting(&config) {
-                    Ok(()) => return Ok(()),
-                    Err(e) if attempt == 0 => {
-                        tracing::warn!(?e, "set_lighting failed, reopening device");
-                        slot.take();
-                        continue;
-                    }
-                    Err(e) => return Err(e.into()),
-                }
-            }
+            let conn = ensure_open(slot)?;
+            conn.set_lighting(&config)?;
             Ok(())
         })
         .await
