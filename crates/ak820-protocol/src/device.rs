@@ -429,6 +429,21 @@ impl Connection {
         Ok(Keymap::decode(&payload))
     }
 
+    /// Read the firmware's **factory-default** base keymap — what the user
+    /// would get after a full reset, without actually issuing the reset.
+    /// Used by the UI's "Reset to factory" button: stage these slots into
+    /// the draft so the user can review before saving.
+    pub fn get_default_keymap(&self) -> Result<Keymap> {
+        let payload = self.get_many(cmd::GET_DEFAULT_KEY_MATRIX, KEYMAP_BYTES)?;
+        Ok(Keymap::decode(&payload))
+    }
+
+    /// Read the firmware's factory-default Fn-layer keymap.
+    pub fn get_default_fn_keymap(&self) -> Result<Keymap> {
+        let payload = self.get_many(cmd::GET_DEFAULT_FN_KEY_MATRIX, KEYMAP_BYTES)?;
+        Ok(Keymap::decode(&payload))
+    }
+
     /// Write the full 128-slot keymap.
     pub fn set_keymap(&self, km: &Keymap) -> Result<()> {
         let payload = km.encode();

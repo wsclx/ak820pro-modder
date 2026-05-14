@@ -296,6 +296,29 @@ async fn get_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> 
         .await
 }
 
+/// Read the firmware's factory-default base-layer keymap without touching
+/// the user's current state. The UI uses this to stage a reset that the
+/// user reviews before pressing Save.
+#[tauri::command]
+async fn get_default_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_default_keymap()?)
+        })
+        .await
+}
+
+#[tauri::command]
+async fn get_default_fn_keymap(state: State<'_, ConnState>) -> Result<Keymap, AppError> {
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            Ok(conn.get_default_fn_keymap()?)
+        })
+        .await
+}
+
 #[tauri::command]
 async fn set_keymap(state: State<'_, ConnState>, keymap: Keymap) -> Result<(), AppError> {
     state
@@ -619,6 +642,8 @@ pub fn run() {
             force_reconnect,
             get_keymap,
             get_fn_keymap,
+            get_default_keymap,
+            get_default_fn_keymap,
             set_keymap,
             set_fn_keymap,
             get_macros,

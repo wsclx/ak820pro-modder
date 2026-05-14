@@ -48,6 +48,7 @@ pub mod cmd {
     pub const SET_CUSTOM_LED_DATA: u8 = 36;
     pub const SET_MACRO: u8 = 37;
     pub const SET_FN_KEY: u8 = 38;
+    pub const GET_DEFAULT_FN_KEY_MATRIX: u8 = 28;
     pub const GET_DEFAULT_KEY_MATRIX: u8 = 31;
     pub const SET_LED_BOOT_ANIMATION: u8 = 64;
     pub const SET_TFT_USER_ANIMATION: u8 = 80;

@@ -191,6 +191,25 @@ export function Keymap() {
     setSelectedSlot(null);
   }
 
+  /// Pull the firmware's factory-default keymap for the active layer and
+  /// stage it as the draft. The user reviews + clicks Save to commit.
+  /// We never write defaults directly — every change goes through Save.
+  async function resetToFactory() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const defaults = await invoke<Keymap>(
+        layer === "base" ? "get_default_keymap" : "get_default_fn_keymap",
+      );
+      setDraft(defaults);
+      setSelectedSlot(null);
+    } catch (e) {
+      setErr(`Couldn't read factory defaults: ${e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function assignAction(slot: number, action: Action) {
     if (!draft) return;
 
@@ -254,6 +273,14 @@ export function Keymap() {
             <LayerSwitch value={layer} onChange={(l) => { setLayer(l); setSelectedSlot(null); }} />
             <Button onClick={() => load(layer)} disabled={busy}>
               {busy ? "Reading…" : "Reload"}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={resetToFactory}
+              disabled={busy}
+              title="Stage the firmware's factory-default keymap for the active layer. Review, then Save to commit."
+            >
+              Factory default
             </Button>
             <Button variant={isDirty ? "ghost-active" : "ghost"} onClick={discard} disabled={busy || !isDirty}>
               Discard
