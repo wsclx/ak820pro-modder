@@ -41,15 +41,37 @@ use tokio::task::JoinHandle;
 
 use crate::AppError;
 
-/// Target output framerate. 30 fps matches the wire-level capacity of
-/// `SET_CUSTOM_LED_DATA` comfortably (a few ms per send) and is below
-/// the human eye's flicker threshold for moving colour fields.
-const TARGET_FPS: u32 = 30;
+/// Target output framerate.
+///
+/// One `SET_CUSTOM_LED_DATA` is `ceil(128 LEDs × 4 B / 56 B per packet) = 10`
+/// HID output reports. At ~3 ms per chunk (write + ack roundtrip), a full
+/// LED update takes ~30 ms. At 30 fps that's a 33 ms window — essentially
+/// 100% mutex contention against the rest of the app, which on Mario's
+/// box manifested as visible flicker. 15 fps doubles the headroom and
+/// reads smoothly to the eye. If we ever want >15 fps we'd need to skip
+/// the per-chunk ack read in `set_many_at`, which is a protocol-layer
+/// change.
+const TARGET_FPS: u32 = 15;
 
 /// Brightness ceiling for any single channel inside a band-coloured
 /// pixel. 220 (instead of 255) leaves the keyboard's overall mode-light
 /// looking colour-correct against its case rather than over-saturated.
 const CHANNEL_MAX: f32 = 220.0;
+
+/// Minimum brightness (as a fraction of `CHANNEL_MAX`) below which the
+/// LEDs never go in a band's zone, even when the analyzer reads zero.
+/// Without this, quiet moments between beats blank the keyboard fully —
+/// which reads to the eye as the LEDs trying to "switch off and back
+/// on" rather than as a musical decay. The floor keeps the structure
+/// visible at all times and makes loud passages feel additive on top.
+const BRIGHTNESS_FLOOR: f32 = 0.08;
+
+/// Gamma curve applied to each band magnitude before the LED brightness
+/// scale. Human perception of brightness is roughly `display ^ 2.2`, so
+/// linear magnitudes look squashed in the middle. `0.7` is the inverse
+/// curve (≈ 1/1.4) that brings mid-loudness signals back to "fully
+/// visible" without over-saturating the loud peaks.
+const BAND_GAMMA: f32 = 0.7;
 
 /// Inner state behind the public `AudioReactiveState`. Held under a
 /// tokio mutex so `start` / `stop` / `status` from Tauri commands
@@ -235,7 +257,15 @@ fn build_spectrum_map(frame: Frame) -> CustomLedMap {
                 5..=10 => (frame.mids, Channel::Green),
                 _ => (frame.highs, Channel::Blue),
             };
-            let v = (band.clamp(0.0, 1.0) * CHANNEL_MAX) as u8;
+            // Gamma-correct so mid-loudness reads as a proper mid-brightness
+            // rather than the squashed-middle look that linear scaling
+            // produces against a CRT-style display response. Then clamp into
+            // [BRIGHTNESS_FLOOR..=1] so quiet moments never blank a LED
+            // fully — the keyboard keeps its structure visible at all times
+            // and loud passages feel additive.
+            let shaped = band.clamp(0.0, 1.0).powf(BAND_GAMMA);
+            let scaled = BRIGHTNESS_FLOOR + shaped * (1.0 - BRIGHTNESS_FLOOR);
+            let v = (scaled * CHANNEL_MAX) as u8;
             let (red, green, blue) = match channel {
                 Channel::Red => (v, 0, 0),
                 Channel::Green => (0, v, 0),
@@ -289,22 +319,53 @@ mod tests {
     }
 
     #[test]
-    fn spectrum_map_scales_brightness_linearly_with_band() {
-        let frame = Frame {
+    fn spectrum_map_floors_silent_bands_above_zero() {
+        // Floor exists so the keyboard stays visible during quiet
+        // moments instead of blanking and reading as "switching off".
+        let frame = Frame::ZERO;
+        let map = build_spectrum_map(frame);
+        let floor = (BRIGHTNESS_FLOOR * CHANNEL_MAX) as u8;
+        assert_eq!(map.leds[0].red, floor, "bass column should sit at floor");
+        assert_eq!(map.leds[7].green, floor, "mids column should sit at floor");
+        assert_eq!(map.leds[15].blue, floor, "highs column should sit at floor");
+        // Off-channel pixels of those columns must stay fully dark.
+        assert_eq!(map.leds[0].green, 0);
+        assert_eq!(map.leds[7].red, 0);
+        assert_eq!(map.leds[15].green, 0);
+    }
+
+    #[test]
+    fn spectrum_map_is_monotone_in_band_magnitude() {
+        // Brightness must rise monotonically with band magnitude — the
+        // exact curve is gamma-shaped (mid-values are pulled *up*), but
+        // 0 ≤ 0.5 ≤ 1.0 always holds. This locks the contract without
+        // pinning the curve, so we can re-tune BAND_GAMMA without test
+        // churn.
+        let zero = build_spectrum_map(Frame::ZERO).leds[0].red;
+        let half = build_spectrum_map(Frame {
             bass: 0.5,
             mids: 0.0,
             highs: 0.0,
-        };
-        let map = build_spectrum_map(frame);
-        // Half-magnitude bass: red ≈ CHANNEL_MAX / 2.
-        let v = map.leds[0].red;
-        let expected = (CHANNEL_MAX * 0.5) as u8;
+        })
+        .leds[0]
+            .red;
+        let full = build_spectrum_map(Frame {
+            bass: 1.0,
+            mids: 0.0,
+            highs: 0.0,
+        })
+        .leds[0]
+            .red;
+        assert!(zero < half, "zero={zero} should be below half={half}");
+        assert!(half < full, "half={half} should be below full={full}");
+        assert_eq!(full, CHANNEL_MAX as u8, "unity band should hit ceiling");
+        // Gamma curve specifically lifts mid-loudness above the linear
+        // midpoint — sanity-check that's working.
+        let linear_mid = ((CHANNEL_MAX + BRIGHTNESS_FLOOR * CHANNEL_MAX) * 0.5) as u8;
         assert!(
-            v.abs_diff(expected) <= 1,
-            "expected red≈{expected}, got {v}"
+            half > linear_mid,
+            "gamma should lift half-band brightness above linear midpoint \
+             (half={half}, linear_mid={linear_mid})"
         );
-        // Mids/highs at zero → mid/high columns dark.
-        assert_eq!(map.leds[7].green, 0);
-        assert_eq!(map.leds[15].blue, 0);
     }
 }

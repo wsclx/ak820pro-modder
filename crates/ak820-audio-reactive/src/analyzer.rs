@@ -28,8 +28,17 @@ use std::sync::Arc;
 pub const FFT_LEN: usize = 1024;
 
 /// Asymmetric EMA: bigger = faster rise / fall.
-const ATTACK: f32 = 0.6;
-const RELEASE: f32 = 0.15;
+///
+/// Tuned for 15 Hz output rate (the AK820 Pro's HID throughput maxes out
+/// around 30 frames/s for a full 128-LED update, leaving 15 fps as the
+/// "comfortable" target — see `src-tauri/src/audio_reactive.rs::TARGET_FPS`).
+/// Higher numbers were too twitchy in practice: 0.6 attack means 60% of
+/// the gap closes per frame, which at 15 Hz reads as visible step-jumps
+/// rather than musical motion. 0.4 / 0.2 settles on ~3 frames to half-max,
+/// which keeps beats visible without the LEDs ever looking like they're
+/// snapping.
+const ATTACK: f32 = 0.4;
+const RELEASE: f32 = 0.2;
 
 /// dB threshold below which we clamp to zero. Anything quieter than
 /// this is treated as silence for visual purposes.
