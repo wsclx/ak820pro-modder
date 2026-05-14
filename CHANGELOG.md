@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+- **TFT image upload (PNG / JPEG / GIF)** — new `tft_image` module in `ak820-protocol` decodes the file via the `image` crate (default-features off; PNG / JPEG / GIF only, no WebP / AVIF / BMP to keep the binary lean), fits the source to 128 × 128 in one of three modes (Fill = centre-crop edge-to-edge, Contain = letterbox preserving the whole image, Stretch = independent-axis scale), quantises to RGB565 LE, and hands the result to the existing chunked uploader. GIFs become multi-frame `TftAnimation`s with per-frame delays taken from the GIF's own metadata; truncated at 30 frames (the device-reported `tftMaxFrames` budget). MP4 / video out of scope — pulling in ffmpeg deps would double the binary; users decimate to GIF first. New native file-open dialog via `tauri-plugin-dialog`. New Tauri command `apply_tft_image(path, fit)`.
+- **TFT Factory Default button** — `tft_factory_default` Tauri command writes `SET_TFT_BUILT_IN_INDEX(0)` so the panel falls back to the firmware's boot-time animation. Useful when an upload looks broken and you want a known-good state.
+- **2 TFT diagnostic presets** added to the catalogue: `Diagnostic · Quadrants` (4 colour quadrants with a 16 px grid + centre cross) and `Diagnostic · Border` (4 px white perimeter). Both visualise whether the upload reaches the full 128 × 128 area — first presets to try on a fresh build before the decorative ones.
+- TFT view UI: file picker + fit-mode toggle + factory-default button in the page header. Diagnostic presets get a warn-tone border to visually distinguish them from the decorative set.
+
+### Known issues
+- TFT presets render only in the **upper half** of the panel on Mario's hardware. The web driver explicitly states `AK820 → 128 × 128`, so dimensions aren't the bug. Suspect a pixel-stride or chunk-header validation we haven't decoded yet. The new `Diagnostic · Quadrants` preset is the next data point — Mario's report will tell us which axis is broken.
+
+### Deferred
+- **10 functional / live-stat TFT presets** (Battery, Volume, CPU, Memory, Clock, etc.) — needs a polling architecture + bitmap-font rasteriser to render text onto the panel. Tracked as Phase 5e in HANDOFF.
+
 Planned for 0.8.x
 - TFT image upload UI (drag-and-drop GIF / PNG → frame extract → resize / dither → upload). Gated on Phase 5b3 — USB pcap of the official Windows tool's activation sequence.
 - Audio-reactive lighting smoothness pass — likely skip the per-chunk `read_response` in `set_many_at` for write-only payloads so the HID pipeline can keep up at >15 fps.

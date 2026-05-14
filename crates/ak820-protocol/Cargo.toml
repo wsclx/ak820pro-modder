@@ -19,3 +19,10 @@ serde = { workspace = true }
 tracing = { workspace = true }
 hex = { workspace = true }
 time = { workspace = true }
+# PNG / JPEG / GIF decode + resize for the TFT image upload pipeline
+# (Phase 5d). default-features is off so we don't drag in WebP, AVIF,
+# BMP, ICO, etc. — those add ~3 MB of compiled binary for formats we
+# don't need on the AK820 Pro's 128 × 128 panel. JPEG decoder is
+# pure-Rust (zune-jpeg) since `default-features = false` drops the
+# `jpeg-encoder` cargo feature; we only ever decode.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }

@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "shell:allow-open",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "dialog:allow-open"
   ]
 }

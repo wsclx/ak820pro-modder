@@ -1,28 +1,27 @@
 /**
- * TFT Display view (Phase 5c).
+ * TFT Display view (Phase 5c/5d).
  *
- * The AK820 Pro's 0.85" 128 × 128 TFT panel can play a per-device user
- * animation. v0.7.0-beta shipped the upload pipeline at the wire level
- * but a single-byte off-by-one in the chunk header meant the firmware
- * accepted uploads silently without ever switching the display from
- * its built-in animation. 0.8.x corrects the magic; the rest of this
- * view assumes the fix lands a visible result on the panel.
+ * Three top-level controls:
  *
- * What this view does **now**:
- * - Lists the 10 curated presets from the backend's `tft_presets` module.
- * - Lets the user pick one, see its frame count + total duration, and
- *   click `Apply` to upload + play it.
- *
- * What this view **doesn't do yet** (planned for 5d):
- * - Drag-and-drop GIF / PNG → frame extract → resize/dither → upload.
- * - Set the TFT to date/time or system-stats overlay (cmd 52).
+ * 1. **Preset picker** — 12 entries: 2 diagnostic patterns at the top
+ *    (Quadrants, Border) so a contributor verifying a fresh build sees
+ *    them first, then 10 decorative test colours / gradients / cycles.
+ * 2. **Custom image upload** — pick a PNG / JPEG / GIF from disk; the
+ *    backend decodes, resizes (Fill / Contain / Stretch), quantises to
+ *    RGB565, and uploads via the same chunked-write path the presets
+ *    use. GIFs become multi-frame animations up to the device's
+ *    `tftMaxFrames` budget (≈ 30 frames).
+ * 3. **Factory Default** — restore the firmware's boot-time animation
+ *    (`SET_TFT_BUILT_IN_INDEX(0)`). Useful when an upload looks broken
+ *    and you want the panel back to a known state.
  *
  * The TFT upload runs against a different HID interface (0xFF67) than
  * the rest of the app, so an upload-in-flight doesn't contend with
- * Lighting / Keymap / Macros commands on the control endpoint.
+ * Lighting / Keymap / Macros work on the control endpoint.
  */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { Badge, Button, Card, ErrorBanner } from "../components/ui";
 import { PageHeader } from "../components/Layout";
 import { formatError } from "../errors";
@@ -34,6 +33,8 @@ interface TftPresetInfo {
   frame_count: number;
   total_ms: number;
 }
+
+type FitMode = "fill" | "contain" | "stretch";
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
@@ -49,6 +50,7 @@ export function Tft() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [fit, setFit] = useState<FitMode>("fill");
 
   useEffect(() => {
     invoke<TftPresetInfo[]>("list_tft_presets")
@@ -59,7 +61,7 @@ export function Tft() {
       .catch((e) => setErr(formatError(e)));
   }, []);
 
-  async function apply() {
+  async function applyPreset() {
     if (!selected) return;
     setBusy(true);
     setErr(null);
@@ -79,25 +81,122 @@ export function Tft() {
     }
   }
 
+  async function uploadImage() {
+    setBusy(true);
+    setErr(null);
+    setInfo(null);
+    try {
+      const path = await openDialog({
+        multiple: false,
+        directory: false,
+        filters: [
+          {
+            name: "Image",
+            extensions: ["png", "jpg", "jpeg", "gif"],
+          },
+        ],
+      });
+      if (typeof path !== "string") {
+        // User cancelled.
+        return;
+      }
+      await invoke("apply_tft_image", { path, fit });
+      const name = path.split("/").pop() ?? path;
+      setInfo(`Uploaded ${name} (fit: ${fit}). Watch the TFT.`);
+    } catch (e) {
+      setErr(formatError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function factoryDefault() {
+    setBusy(true);
+    setErr(null);
+    setInfo(null);
+    try {
+      await invoke("tft_factory_default");
+      setInfo("Restored firmware-default animation.");
+    } catch (e) {
+      setErr(formatError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const current = presets?.find((p) => p.id === selected);
 
   return (
     <>
       <PageHeader
         title="TFT Display"
-        description={"0.85\" 128×128 IPS panel above the knob. Pick a curated preset and apply — Phase 5c."}
+        description={
+          "0.85\" 128×128 IPS panel above the knob. Pick a preset, upload a still / GIF, or restore the factory animation."
+        }
         action={
-          current && (
-            <Button variant="primary" onClick={() => void apply()} disabled={busy || !selected}>
-              {busy ? "Uploading…" : `Apply · ${current.display_name}`}
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => void factoryDefault()} disabled={busy}>
+              Factory Default
             </Button>
-          )
+            {current && (
+              <Button variant="primary" onClick={() => void applyPreset()} disabled={busy || !selected}>
+                {busy ? "Working…" : `Apply · ${current.display_name}`}
+              </Button>
+            )}
+          </div>
         }
       />
 
       <ErrorBanner>{err}</ErrorBanner>
 
       <div className="grid gap-6">
+        <Card
+          title={
+            <span className="inline-flex items-center gap-2">
+              <span>Custom image</span>
+              <Badge tone="neutral">Beta</Badge>
+            </span>
+          }
+        >
+          <p className="text-sm text-fg-2">
+            Pick a <code>.png</code>, <code>.jpg</code>, or <code>.gif</code> from disk —
+            it's decoded, resized to 128 × 128, quantised to RGB565, and uploaded.
+            GIFs become multi-frame animations (truncated to ≈ 30 frames; the
+            firmware's per-upload budget).
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button variant="primary" onClick={() => void uploadImage()} disabled={busy}>
+              {busy ? "Working…" : "Choose image…"}
+            </Button>
+            <span className="text-xs uppercase tracking-wider text-fg-3">Fit:</span>
+            <div className="inline-flex overflow-hidden rounded-md border border-line">
+              {(["fill", "contain", "stretch"] as FitMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setFit(mode)}
+                  disabled={busy}
+                  className={[
+                    "px-3 py-1.5 text-xs font-medium uppercase tracking-wider transition",
+                    fit === mode
+                      ? "bg-accent-500/30 text-fg-0"
+                      : "bg-surface-raised text-fg-2 hover:bg-surface-elevated",
+                  ].join(" ")}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-fg-3">
+            <strong>Fill</strong> = centre-crop to a square (edge-to-edge,
+            matches the AJAZZ web tool default). <strong>Contain</strong> =
+            letterbox with black bars to preserve the whole image.
+            <strong> Stretch</strong> = scale axes independently (only useful
+            if you've already cropped to a square).
+          </p>
+        </Card>
+
         <Card
           title={
             <span className="inline-flex items-center gap-2">
@@ -111,17 +210,17 @@ export function Tft() {
           ) : (
             <>
               <p className="text-sm text-fg-2">
-                10 curated animations, generated programmatically (no embedded
-                pixel data — the binary stays small, contributors can tweak a
-                single function to redesign a preset). Start with{" "}
-                <span className="font-medium text-fg-1">Magenta</span> or{" "}
-                <span className="font-medium text-fg-1">Cyan</span> to verify
-                your TFT accepts uploads — if it goes pink or cyan, the rest
-                will too.
+                12 generated animations: 2 diagnostic patterns first (Quadrants,
+                Border) for verifying the display renders the full 128 × 128
+                area, then 10 decorative test colours / gradients / cycles.
+                Start with <span className="font-medium text-fg-1">Diagnostic
+                · Quadrants</span> on a fresh build — if all 4 colour quadrants
+                are visible, the protocol stack and dimensions are right.
               </p>
               <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {presets.map((p) => {
                   const isActive = p.id === selected;
+                  const isDiagnostic = p.id.startsWith("diagnostic-");
                   return (
                     <button
                       key={p.id}
@@ -131,6 +230,8 @@ export function Tft() {
                         "flex flex-col items-start rounded-lg border px-3 py-2.5 text-left transition",
                         isActive
                           ? "border-accent-500/60 bg-accent-500/15 text-fg-0"
+                          : isDiagnostic
+                          ? "border-warn/40 bg-warn/5 text-fg-1 hover:border-warn/60"
                           : "border-line bg-surface-raised text-fg-1 hover:border-line-strong",
                       ].join(" ")}
                     >
@@ -152,16 +253,19 @@ export function Tft() {
         {info && (
           <Card title="Status">
             <p className="text-sm text-fg-1">{info}</p>
-            <p className="mt-2 text-xs text-fg-3">
-              The upload reaches the firmware on every AK820 Pro variant, but
-              the actual display switch from the built-in animation to user
-              content depends on the chunk-header magic the firmware
-              validates against. 0.8.x corrected an off-by-one in that
-              constant compared to 0.7.0-beta — if you're upgrading, this
-              is the first build where the display should actually flip.
-            </p>
           </Card>
         )}
+
+        <Card title="Next iteration">
+          <p className="text-sm text-fg-2">
+            Live system-info presets (battery percent, volume, CPU, clock,
+            etc.) need a polling + on-host text-rasterisation pipeline that
+            isn't built yet. Tracked as Phase 5e — see the project HANDOFF
+            for the scope and reasons. The current build ships the upload
+            path so contributors can hand-craft these images in any editor
+            and drop them in via <em>Custom image</em>.
+          </p>
+        </Card>
       </div>
     </>
   );

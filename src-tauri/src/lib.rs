@@ -4,6 +4,7 @@ use ak820_protocol::{
     commands::macros::{Macro, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO},
     commands::per_key_rgb::CustomLedMap,
     commands::system::{DeviceInfoReport, GameMode, SleepPreset, SLEEP_PRESETS},
+    commands::tft_image::{self, FitMode},
     commands::tft_presets::{self, TftPresetInfo},
     device::ProbeReport,
     Connection, DeviceInfo,
@@ -947,6 +948,51 @@ fn list_tft_presets() -> Vec<TftPresetInfo> {
     tft_presets::catalogue()
 }
 
+/// Restore the TFT to its firmware-default animation. The web driver
+/// surfaces this as a single button. Implementation-wise: ask the
+/// device to show built-in animation index 0 — that's the boot-time
+/// default on every AK820 Pro firmware we've seen.
+#[tauri::command]
+async fn tft_factory_default() -> Result<(), AppError> {
+    tokio::task::spawn_blocking(|| -> Result<(), AppError> {
+        let tft = Connection::open_tft().map_err(AppError::from)?;
+        tft.set_tft_built_in_index(0).map_err(AppError::from)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Protocol(format!("join factory default: {e}")))?
+}
+
+/// Upload a user-supplied image (PNG, JPEG, or GIF) to the TFT.
+/// `fit` is one of `"fill"` / `"contain"` / `"stretch"`. Reads the file
+/// off-thread, decodes + resizes + quantises off-thread, and uploads
+/// off-thread — three separate `spawn_blocking` because each stage is
+/// synchronous and we don't want to park a tokio worker on disk I/O
+/// or 128 × 128 RGB565 quantisation for a multi-frame GIF.
+#[tauri::command]
+async fn apply_tft_image(path: String, fit: String) -> Result<(), AppError> {
+    let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
+        .await
+        .map_err(|e| AppError::Protocol(format!("join read: {e}")))?
+        .map_err(|e| AppError::Protocol(format!("read image: {e}")))?;
+
+    let fit_mode = FitMode::parse_lenient(&fit);
+    let anim =
+        tokio::task::spawn_blocking(move || tft_image::animation_from_bytes(&bytes, fit_mode))
+            .await
+            .map_err(|e| AppError::Protocol(format!("join decode: {e}")))?
+            .map_err(AppError::from)?;
+
+    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
+        let tft = Connection::open_tft().map_err(AppError::from)?;
+        tft.upload_tft_animation(&anim).map_err(AppError::from)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| AppError::Protocol(format!("join upload: {e}")))??;
+    Ok(())
+}
+
 #[tauri::command]
 async fn apply_tft_preset(id: String) -> Result<(), AppError> {
     // Build the animation off-thread — pixel generation for the busier
@@ -982,7 +1028,8 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(Arc::new(ConnState::default()))
-        .plugin(tauri_plugin_shell::init());
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init());
 
     // Audio-reactive state is macOS-only; on Linux/Windows we still
     // expose the three Tauri commands (they stub out with "requires
@@ -1033,6 +1080,8 @@ pub fn run() {
             icloud_sync_pull,
             list_tft_presets,
             apply_tft_preset,
+            apply_tft_image,
+            tft_factory_default,
         ])
         .setup(|app| {
             use tauri::Manager;

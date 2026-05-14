@@ -66,10 +66,29 @@ struct PresetEntry {
     build: fn() -> TftAnimation,
 }
 
-/// The shipping preset catalogue. Order is the UI display order — test
-/// colours first because they're useful for verifying the display works
-/// at all, then static decoration, then animations from simple → busy.
+/// The shipping preset catalogue. Order is the UI display order — diagnostic
+/// presets first (so a contributor verifying a fresh AK820 Pro sees them
+/// before the decorative animations), then test colours, then static
+/// decoration, then animations from simple → busy.
 static ALL_PRESETS: &[PresetEntry] = &[
+    PresetEntry {
+        id: "diagnostic-quadrants",
+        display_name: "Diagnostic · Quadrants",
+        description: "4 corners coloured red/green/blue/yellow with a 1 px black grid \
+             every 16 px and a centred 8 px white cross. Tells you visually \
+             whether the display renders the full 128 × 128 frame, which way \
+             is 'up', and roughly where the centre of the visible area sits. \
+             First preset to try on a new hardware build.",
+        build: diagnostic_quadrants,
+    },
+    PresetEntry {
+        id: "diagnostic-border",
+        display_name: "Diagnostic · Border",
+        description: "4 px white border around the 128 × 128 perimeter, otherwise pitch \
+             black. If any edge of the border is missing or clipped, our pixel \
+             stream isn't reaching that part of the panel.",
+        build: diagnostic_border,
+    },
     PresetEntry {
         id: "magenta-solid",
         display_name: "Magenta",
@@ -200,6 +219,61 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
 // ---------------------------------------------------------------------------
 // Presets
 // ---------------------------------------------------------------------------
+
+fn diagnostic_quadrants() -> TftAnimation {
+    // Four colour quadrants with 1 px black grid every 16 px and an 8 px
+    // white plus sign at the centre. Picking 16 px = a power of 2 makes
+    // it easy to count divisions if the display turns out to be a
+    // different resolution than expected.
+    let frame = build_frame(
+        |x, y| {
+            // Grid lines first — supersede everything else.
+            if x % 16 == 0 || y % 16 == 0 {
+                return (0x10, 0x10, 0x10);
+            }
+            // Centre cross: 8 px wide bar at x or y middle ±4 px.
+            let cx = TFT_WIDTH as i32 / 2;
+            let cy = TFT_HEIGHT as i32 / 2;
+            let dx = (x as i32 - cx).abs();
+            let dy = (y as i32 - cy).abs();
+            if (dx < 4 && dy < (TFT_HEIGHT as i32 / 2 - 4))
+                || (dy < 4 && dx < (TFT_WIDTH as i32 / 2 - 4))
+            {
+                return (0xFF, 0xFF, 0xFF);
+            }
+            // Quadrant colour. (0,0) is top-left.
+            let right = x >= TFT_WIDTH / 2;
+            let bottom = y >= TFT_HEIGHT / 2;
+            match (right, bottom) {
+                (false, false) => (0xC0, 0x20, 0x20), // TL red
+                (true, false) => (0x20, 0xC0, 0x20),  // TR green
+                (false, true) => (0x20, 0x40, 0xC0),  // BL blue
+                (true, true) => (0xC0, 0xA0, 0x10),   // BR yellow / amber
+            }
+        },
+        200,
+    );
+    TftAnimation {
+        frames: vec![frame],
+    }
+}
+
+fn diagnostic_border() -> TftAnimation {
+    const BORDER: u32 = 4;
+    let frame = build_frame(
+        |x, y| {
+            if x < BORDER || y < BORDER || x >= TFT_WIDTH - BORDER || y >= TFT_HEIGHT - BORDER {
+                (0xFF, 0xFF, 0xFF)
+            } else {
+                (0x00, 0x00, 0x00)
+            }
+        },
+        200,
+    );
+    TftAnimation {
+        frames: vec![frame],
+    }
+}
 
 fn magenta_solid() -> TftAnimation {
     TftAnimation {
@@ -353,9 +427,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalogue_returns_ten_entries() {
+    fn catalogue_returns_twelve_entries() {
         let c = catalogue();
-        assert_eq!(c.len(), 10, "10 presets is the documented shipping count");
+        assert_eq!(
+            c.len(),
+            12,
+            "12 = 2 diagnostic + 10 decorative; bump this when adding presets"
+        );
     }
 
     #[test]
