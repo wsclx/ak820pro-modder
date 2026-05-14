@@ -45,6 +45,8 @@ docs/reverse-engineering/captures/*.pcapng
 
 # Claude Code (lokale Overrides bleiben pro-Maschine)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
 
 # Runtime caches from previous tool sessions
 .swarm/

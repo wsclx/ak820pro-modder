@@ -15,8 +15,18 @@ First off — thanks for considering a contribution. This project lives or dies 
 You own an AK820 Pro? Open the app, try every feature, and report what doesn't work for your firmware / layout. Especially valuable:
 
 - **Different firmware versions** (run `ak820 info` to see yours — we're verified on `v1.07`).
-- **Different physical layouts** (ANSI, ISO-UK, ISO-DE, JIS, …) — submit your `ak820 hid-descriptors` output as an issue so we can extend `iso-de-layout.json` family.
 - **The Mac / Win hardware switch on the back** behaves differently between firmwares — we'd love captures of which slots respond to remap in each mode.
+
+### ⌨️ Adding a new physical layout
+
+`v0.5.0-beta` ships **ISO-DE only**. The wire protocol is layout-agnostic — only the on-screen keyboard surface is layout-specific. To add ANSI / ISO-FR / ISO-ES / ISO-UK / JIS support cleanly:
+
+1. **Capture your layout's keycaps.** Run `ak820 info` to confirm the firmware version, then export the factory keymap (planned CLI helper: `ak820 dump-default-keymap`). Cross-reference each printed legend with the device slot from `GET_KEY`.
+2. **Add the descriptor file.** Drop `src/data/layouts/<layout-id>.json` with the same schema as `iso-de.json` — `PhysicalKey[][]` rows of `{ slot, label, hid, cls? }`. Slot numbers are firmware-internal and identical across variants; only `label` and the Tailwind `cls` flexbox hints change.
+3. **Wire it through.** Create `<layout-id>.ts` mirroring `iso-de.ts`, then register it in `src/data/layouts/index.ts`'s `LAYOUTS` map. **Never** change `DEFAULT_LAYOUT_ID` without an explicit discussion — the default has always been `iso-de` and will stay so until multi-layout coverage is complete.
+4. **Test on real hardware** and attach screenshots / captures to your PR. The PR template asks specifically about layout — fill it in.
+
+Layout-aware branches in the Keymap view itself are off-limits — render uniformly from whichever `KeyboardLayout` the registry returns. All variant-specific differences live exclusively in the variant's `.json` + `.ts` pair.
 
 ### 🕵️ Reverse engineering
 We have ~80 % of the wire protocol decoded against the AJAZZ web driver. The remaining 20 % is invisible from JS source alone and needs USB pcap captures of the official Windows tool. Highest-priority captures:

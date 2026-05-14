@@ -36,6 +36,7 @@ First public preview. Five feature phases implemented end-to-end on the AK820 Pr
 - **26 unit tests** across protocol / frame / keymap / macros / lighting / per-key-RGB / TFT modules.
 
 ### Known limitations
+- **Physical layout: ISO-DE only.** The Keymap surface in the app is hard-coded to the German ISO (QWERTZ) variant. The wire protocol is layout-agnostic, so lighting / system / per-key RGB / TFT paths work on every AK820 Pro variant — but ANSI / ISO-FR / ISO-ES / ISO-UK / JIS hardware will see mislabelled keys in the Keymap view. Multi-layout support is on the roadmap; the architecture (`src/data/layouts/`) is already prepared to host additional layouts cleanly separated.
 - TFT upload runs at wire level but the display still shows the default animation — `SET_TFT_BUILT_IN_INDEX` doesn't appear to switch to user mode on the AK820 Pro firmware we tested. Awaiting USB pcap of the official Windows tool to ground-truth the final activation sequence.
 - Per-key RGB has CLI control but no in-app paint UI yet.
 - ISO-Enter L-shape renders as a regular rectangle (visual polish only).

@@ -240,8 +240,11 @@ packet flag).
 │   │   ├── System.tsx              <- firmware, battery, sleep, game-mode
 │   │   └── Keymap.tsx              <- visual ISO-DE, click-to-edit, save
 │   └── data/
-│       ├── iso-de-layout.json      <- physical key positions, slots & HIDs
-│       ├── iso-de-layout.ts        <- typed wrapper
+│       └── layouts/                <- one folder per regional layout
+│           ├── types.ts             <- PhysicalKey + KeyboardLayout + LayoutId
+│           ├── index.ts             <- registry, default, resolveLayout()
+│           ├── iso-de.json          <- ISO-DE physical positions, slots & HIDs (v0.5.0-beta ships only this)
+│           └── iso-de.ts            <- typed wrapper
 │       ├── hid-usage-names.ts      <- HID code → human label
 │       └── action-catalog.ts       <- picker groups (letters/digits/F-keys/
 │                                       modifiers/media/special)
@@ -396,6 +399,35 @@ therefore cannot be reassigned through this protocol. If knob remap ever
 becomes a priority, the only paths are (a) firmware-level RE (Sonix
 toolchain) or (b) empirical probing of unused slot numbers (13–15, 93–96,
 109–127) by writing a distinct test action and watching what fires.
+
+### 6.9b Physical layout: ISO-DE only — never mix
+The AK820 Pro ships in at least five regional variants (ISO-DE, ANSI,
+ISO-FR, ISO-ES, ISO-UK, JIS). `v0.5.0-beta` is built and tested
+**exclusively** against the ISO-DE QWERTZ variant.
+
+The **wire protocol is layout-agnostic** — slot numbers are
+firmware-internal addresses, identical across variants. So lighting,
+system commands, per-key RGB, and TFT upload all work on every AK820
+Pro. The *Keymap view* is the one place where layout matters: it
+renders the on-screen surface from `src/data/layouts/iso-de.json`
+positions and labels.
+
+If a user runs this app against an ANSI / FR / ES / UK / JIS unit, the
+keymap still functions (slot remaps still land where the user clicks)
+but the *legends* will be wrong. The sidebar shows a small `ISO-DE`
+badge so the user notices.
+
+**Architectural rule** (do not break): layout-aware branches go into
+`src/data/layouts/<id>.{json,ts}` ONLY. The Keymap view renders
+uniformly from whichever `KeyboardLayout` the registry returns;
+adding `if (layoutId === 'ansi')` branches in views is forbidden.
+
+When the AJAZZ Windows app or other AK820 Pro variants come into the
+RE picture — like the v1.0.0.5 Win driver, which is the ANSI build —
+**never** mix that variant's keycap data into the ISO-DE descriptor.
+The wire-protocol findings are still valid (the protocol is
+layout-agnostic), but copy any layout-specific positions into a
+*separate* layout file.
 
 ### 6.9 Keymap action-page enum `O` values (mismatch landmine)
 The official enum is:

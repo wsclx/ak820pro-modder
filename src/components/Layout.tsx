@@ -1,6 +1,7 @@
 import type { PropsWithChildren, ReactNode } from "react";
 import { BatteryBar, prettyProduct } from "./ui";
 import { APP_CREDIT, APP_HOMEPAGE } from "../version";
+import { resolveLayout, DEFAULT_LAYOUT_ID } from "../data/layouts";
 
 export interface NavItem<T extends string> {
   id: T;
@@ -113,16 +114,22 @@ export function Layout<T extends string>({
           {connection?.connected && battery && (
             <BatteryBar level={battery.level} charging={battery.charging} compact />
           )}
-          <div className="mt-3 border-t border-line/60 pt-2.5">
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/60 pt-2.5">
             <a
               href={APP_HOMEPAGE}
               target="_blank"
               rel="noopener noreferrer"
-              className="block text-[10px] leading-tight text-fg-3 transition-colors hover:text-fg-1"
+              className="text-[10px] leading-tight text-fg-3 transition-colors hover:text-fg-1"
               title="Open the project on GitHub"
             >
               {APP_CREDIT}
             </a>
+            <span
+              className="rounded-sm border border-line bg-surface-base px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-fg-3"
+              title={`Active keyboard layout. v0.5.0-beta is built for ${resolveLayout(DEFAULT_LAYOUT_ID).displayName} only — other variants are on the roadmap.`}
+            >
+              {resolveLayout(DEFAULT_LAYOUT_ID).displayName}
+            </span>
           </div>
         </footer>
       </aside>

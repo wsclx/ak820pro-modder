@@ -38,7 +38,9 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 
 ## Status
 
-**Version 0.5.0-beta.** Lighting, keymap, macros, system info are hardware-verified on the AK820 Pro running firmware 1.07 (ISO-DE layout). Per-key RGB and TFT upload are protocol-complete and ship a CLI smoke test; full UI for both is in active development. See the [Roadmap](#roadmap) section for details.
+**Version 0.5.0-beta.** Lighting, keymap, macros, system info are hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). Per-key RGB and TFT upload are protocol-complete and ship a CLI smoke test; full UI for both is in active development. See the [Roadmap](#roadmap) section for details.
+
+> ⚠️ **Layout scope.** `v0.5.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. The wire protocol itself is layout-agnostic, so the lighting / system / per-key-RGB / TFT paths work on every AK820 Pro variant — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
 
 > ⚠️ Beta software. Read-only paths are safe; write paths have been used extensively on a single physical device without bricking, but there are no warranties. The keyboard's hidden bootloader (under the spacebar, see hardware notes) is your rescue path if anything ever goes sideways.
 
@@ -138,6 +140,7 @@ ak820pro-modder/
 | Display | NFP085B-10AF, 0.85″ 128 × 128 | GC9107 controller, SPI |
 | Bootloader | Hidden pins under spacebar | ISP-mode VID/PID `0x0C45 / 0x7140` |
 | Operating VID/PID | `0x0C45 / 0x8009` (wired + 2.4 GHz) | `0xFEFE` for BT, control on HID interface 2 (`usage_page 0xFF68`) |
+| **Tested layout** | **ISO-DE** (German QWERTZ) | The wire protocol is layout-agnostic; only the rendered keyboard surface in the Keymap view is layout-specific. ANSI / ISO-FR / ISO-ES / ISO-UK / JIS variants exist for the AK820 Pro and are on the multi-layout roadmap. |
 
 Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hardware-doc project for the early MCU / wireless / flash identification — see [Acknowledgements](#acknowledgements).
 
@@ -154,12 +157,13 @@ Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hard
 | 5b — TFT display | 🟡 | Protocol + CLI upload verified at wire level; visibility flip pending USB pcap |
 | 6 — Power features | 🛣 | Audio-reactive RGB (ScreenCaptureKit), now-playing on TFT (MediaRemote), AppleScript bridge, iCloud profile sync |
 | 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
+| 8 — Multi-layout | 🛣 | ANSI, ISO-FR, ISO-ES, ISO-UK, JIS variants. Cleanly isolated under `src/data/layouts/` with a layout-picker UI. The wire protocol already works for every variant; this is purely about the on-screen keyboard surface. |
 
 ## Contributing
 
 This is an open project. We need:
 
-- 🧪 **Hardware testers** — different AK820 Pro firmware versions / variants (ANSI, ISO-DE, ISO-UK, …).
+- 🧪 **Hardware testers** — `v0.5.0-beta` is built for **ISO-DE only**. If you own an ANSI / ISO-FR / ISO-ES / ISO-UK / JIS AK820 Pro, the wire protocol still works (lighting, system, per-key RGB, TFT), but the Keymap surface will be mislabelled. Capture your physical layout into a new file under `src/data/layouts/` — see the layouts directory's `index.ts` for the three-step add-a-layout recipe.
 - 🕵️ **Reverse engineers** — USB pcap captures of the official Windows tool doing specific actions (especially TFT upload and the per-key RGB enable path).
 - 🦀 **Rust developers** — protocol modules, error handling, additional decoders.
 - ⚛️ **Frontend developers** — UI for TFT image upload, per-key RGB paint mode, audio-reactive visualisation.

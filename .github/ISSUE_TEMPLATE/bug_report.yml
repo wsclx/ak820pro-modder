@@ -78,6 +78,27 @@ body:
         - Win
         - Not applicable
 
+  - type: dropdown
+    id: layout
+    attributes:
+      label: Physical layout
+      description: |
+        `v0.5.0-beta` is built and tested against **ISO-DE only**. If you're
+        on a different variant, the Keymap view will show wrong legends —
+        that's a known limitation, not a bug. Other features (lighting,
+        system, per-key RGB, TFT) are layout-agnostic and should work
+        regardless.
+      options:
+        - ISO-DE (German QWERTZ — fully supported)
+        - ANSI (US — known mislabelling in Keymap)
+        - ISO-UK (British — known mislabelling in Keymap)
+        - ISO-FR (French AZERTY — known mislabelling in Keymap)
+        - ISO-ES (Spanish — known mislabelling in Keymap)
+        - JIS (Japanese — known mislabelling in Keymap)
+        - Other / not sure
+    validations:
+      required: true
+
   - type: textarea
     id: logs
     attributes:

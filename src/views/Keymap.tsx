@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, Button, Card, ErrorBanner } from "../components/ui";
 import { PageHeader } from "../components/Layout";
-import { ISO_DE_LAYOUT, type PhysicalKey } from "../data/iso-de-layout";
+import { ISO_DE_LAYOUT_ROWS as ISO_DE_LAYOUT, type PhysicalKey } from "../data/layouts";
 import { hidName } from "../data/hid-usage-names";
 import {
   ACTION_GROUPS,
