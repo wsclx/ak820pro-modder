@@ -580,7 +580,11 @@ function capStyleFor(cls: string | undefined, label: string, isLastInRow: boolea
   let marginRight: number | undefined;
   if (label === "↑") marginRight = 42;
   if (c.includes("mr-3")) marginRight = 8;
-  if (c.includes("mr-15")) marginRight = undefined; // currently render flat
+  // NOTE: `mr-15` on slot 90 (↑) and slot 106 (Del/Entf) is *not* honoured
+  // here — the 42 px hard-coded marginRight for "↑" is what aligns the up-
+  // arrow over the down-arrow in row 5. Earlier code had an `mr-15 →
+  // marginRight=undefined` line here that silently *overwrote* the 42 px
+  // and pushed ↑ all the way right over →. Don't reintroduce it.
 
   // `mt--N` is a Tailwind-style negative top margin used by the iso-de
   // home row to tighten the gap above it. We honour it but cap the
@@ -598,14 +602,17 @@ function capStyleFor(cls: string | undefined, label: string, isLastInRow: boolea
     }
   }
 
-  // ISO Enter (h-30) gets a clip-path that carves the L-shape notch from
-  // its top-left, so it visually mates with the `+` cap above the home
-  // row. Without the clip-path it just looks like a tall rectangle.
-  // The notch eats 28 % of the width × 50 % of the height — slightly
-  // less than the 30 % a real ISO Enter has, because our cap padding
-  // pulls labels toward the right side of the visible region.
+  // ISO Enter (h-30) gets a clip-path that carves the L-shape notch out
+  // of the **bottom-left** corner. Real AK820 Pro ISO Enter has the wider
+  // portion at the top (sitting above `Ü +~*`) and the narrower hook
+  // hanging down on the right (above the home-row's last extra key like
+  // `#'`). The notch eats 28 % of the width × the lower 50 % of the
+  // height. Earlier this commit-series put the notch in the top-left
+  // by mistake (top narrow, bottom wide) — which is the *mirror image*
+  // of what an AK820 Pro actually has. Mario flagged it; this is the
+  // correct orientation.
   const clipPath = c.includes("h-30")
-    ? "polygon(28% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 50%, 28% 50%)"
+    ? "polygon(0% 0%, 100% 0%, 100% 100%, 28% 100%, 28% 50%, 0% 50%)"
     : undefined;
 
   return { width, height, flexGrow, marginLeft, marginRight, marginTop, marginBottom, clipPath };
