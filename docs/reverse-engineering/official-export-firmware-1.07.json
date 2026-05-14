@@ -1,0 +1,1419 @@
+{
+  "deviceId": "3141:32777:AK820",
+  "profile": {
+    "protocol": "default",
+    "deviceInfo": {
+      "romSize": 64,
+      "macroSpaceSize": 512,
+      "vid": 3141,
+      "pid": 32777,
+      "version": 1.07,
+      "sensor": 65535,
+      "manufacturer": 1,
+      "product": 5,
+      "workMode": 0,
+      "batteryLevel": 100,
+      "chargeStatus": 1,
+      "currentProfile": 0,
+      "axisInfo": 0,
+      "tftMaxFrames": 255,
+      "gifMaxFrames": 0,
+      "ledMaxFrames": 0,
+      "tftDirection": 0,
+      "rtPrecision": 0,
+      "frameVersion": 0,
+      "lightingVersion": 0
+    },
+    "keyList": [
+      [
+        {
+          "className": "",
+          "value": 0,
+          "name": "Esc",
+          "keyCode": 41,
+          "key": "Escape"
+        },
+        {
+          "className": "ml-auto",
+          "value": 1,
+          "name": "F1",
+          "keyCode": 58,
+          "key": "F1"
+        },
+        {
+          "className": "",
+          "value": 2,
+          "name": "F2",
+          "keyCode": 59,
+          "key": "F2"
+        },
+        {
+          "className": "",
+          "value": 3,
+          "name": "F3",
+          "keyCode": 60,
+          "key": "F3"
+        },
+        {
+          "className": "",
+          "value": 4,
+          "name": "F4",
+          "keyCode": 61,
+          "key": "F4"
+        },
+        {
+          "className": "ml-auto",
+          "value": 5,
+          "name": "F5",
+          "keyCode": 62,
+          "key": "F5"
+        },
+        {
+          "className": "",
+          "value": 6,
+          "name": "F6",
+          "keyCode": 63,
+          "key": "F6"
+        },
+        {
+          "className": "",
+          "value": 7,
+          "name": "F7",
+          "keyCode": 64,
+          "key": "F7"
+        },
+        {
+          "className": "",
+          "value": 8,
+          "name": "F8",
+          "keyCode": 65,
+          "key": "F8"
+        },
+        {
+          "className": "ml-auto",
+          "value": 9,
+          "name": "F9",
+          "keyCode": 66,
+          "key": "F9"
+        },
+        {
+          "className": "",
+          "value": 10,
+          "name": "F10",
+          "keyCode": 67,
+          "key": "F10"
+        },
+        {
+          "className": "",
+          "value": 11,
+          "name": "F11",
+          "keyCode": 68,
+          "key": "F11"
+        },
+        {
+          "className": "",
+          "value": 12,
+          "name": "F12",
+          "keyCode": 69,
+          "key": "F12"
+        },
+        {
+          "className": "mr-15",
+          "value": 106,
+          "name": "Entf",
+          "keyCode": 76,
+          "key": "Delete"
+        }
+      ],
+      [
+        {
+          "className": "",
+          "value": 16,
+          "name": "^°",
+          "keyCode": 53,
+          "key": "Backquote"
+        },
+        {
+          "className": "",
+          "value": 17,
+          "name": "1 !",
+          "keyCode": 30,
+          "key": "Digit1"
+        },
+        {
+          "className": "",
+          "value": 18,
+          "name": "2²\"",
+          "keyCode": 31,
+          "key": "Digit2"
+        },
+        {
+          "className": "",
+          "value": 19,
+          "name": "3³§",
+          "keyCode": 32,
+          "key": "Digit3"
+        },
+        {
+          "className": "",
+          "value": 20,
+          "name": "4 $",
+          "keyCode": 33,
+          "key": "Digit4"
+        },
+        {
+          "className": "",
+          "value": 21,
+          "name": "5 %",
+          "keyCode": 34,
+          "key": "Digit5"
+        },
+        {
+          "className": "",
+          "value": 22,
+          "name": "6 &",
+          "keyCode": 35,
+          "key": "Digit6"
+        },
+        {
+          "className": "",
+          "value": 23,
+          "name": "7{/",
+          "keyCode": 36,
+          "key": "Digit7"
+        },
+        {
+          "className": "",
+          "value": 24,
+          "name": "8[(",
+          "keyCode": 37,
+          "key": "Digit8"
+        },
+        {
+          "className": "",
+          "value": 25,
+          "name": "9])",
+          "keyCode": 38,
+          "key": "Digit9"
+        },
+        {
+          "className": "",
+          "value": 26,
+          "name": "0}=",
+          "keyCode": 39,
+          "key": "Digit0"
+        },
+        {
+          "className": "",
+          "value": 27,
+          "name": "ß?\\",
+          "keyCode": 45,
+          "key": "Minus"
+        },
+        {
+          "className": "",
+          "value": 28,
+          "name": "´`",
+          "keyCode": 46,
+          "key": "Equal"
+        },
+        {
+          "className": "flex-1",
+          "value": 92,
+          "name": "Back",
+          "keyCode": 42,
+          "key": "Backspace"
+        },
+        {
+          "className": "",
+          "value": 107,
+          "name": "Ende",
+          "keyCode": 77,
+          "key": "End"
+        }
+      ],
+      [
+        {
+          "className": "w-24",
+          "value": 32,
+          "name": "Tab",
+          "keyCode": 43,
+          "key": "Tab"
+        },
+        {
+          "className": "",
+          "value": 33,
+          "name": "Q@",
+          "keyCode": 20,
+          "key": "KeyQ"
+        },
+        {
+          "className": "",
+          "value": 34,
+          "name": "W",
+          "keyCode": 26,
+          "key": "KeyW"
+        },
+        {
+          "className": "",
+          "value": 35,
+          "name": "E€",
+          "keyCode": 8,
+          "key": "KeyE"
+        },
+        {
+          "className": "",
+          "value": 36,
+          "name": "R",
+          "keyCode": 21,
+          "key": "KeyR"
+        },
+        {
+          "className": "",
+          "value": 37,
+          "name": "T",
+          "keyCode": 23,
+          "key": "KeyT"
+        },
+        {
+          "className": "",
+          "value": 38,
+          "name": "Z",
+          "keyCode": 28,
+          "key": "KeyY"
+        },
+        {
+          "className": "",
+          "value": 39,
+          "name": "U",
+          "keyCode": 24,
+          "key": "KeyU"
+        },
+        {
+          "className": "",
+          "value": 40,
+          "name": "I",
+          "keyCode": 12,
+          "key": "KeyI"
+        },
+        {
+          "className": "",
+          "value": 41,
+          "name": "O",
+          "keyCode": 18,
+          "key": "KeyO"
+        },
+        {
+          "className": "",
+          "value": 42,
+          "name": "P",
+          "keyCode": 19,
+          "key": "KeyP"
+        },
+        {
+          "className": "",
+          "value": 43,
+          "name": "Ü",
+          "keyCode": 47,
+          "key": "BracketLeft"
+        },
+        {
+          "className": "mr-3",
+          "value": 44,
+          "name": "+~*",
+          "keyCode": 48,
+          "key": "BracketRight"
+        },
+        {
+          "className": "h-30 w-18 ",
+          "value": 76,
+          "name": "Enter",
+          "keyCode": 40,
+          "key": "Enter"
+        },
+        {
+          "className": "",
+          "value": 105,
+          "name": "Bild↑",
+          "keyCode": 75,
+          "key": "PageUp"
+        }
+      ],
+      [
+        {
+          "className": "w-27 mt--15",
+          "value": 48,
+          "name": "Caps",
+          "keyCode": 57,
+          "key": "CapsLock"
+        },
+        {
+          "className": "mt--15",
+          "value": 49,
+          "name": "A",
+          "keyCode": 4,
+          "key": "KeyA"
+        },
+        {
+          "className": "mt--15",
+          "value": 50,
+          "name": "S",
+          "keyCode": 22,
+          "key": "KeyS"
+        },
+        {
+          "className": "mt--15",
+          "value": 51,
+          "name": "D",
+          "keyCode": 7,
+          "key": "KeyD"
+        },
+        {
+          "className": "mt--15",
+          "value": 52,
+          "name": "F",
+          "keyCode": 9,
+          "key": "KeyF"
+        },
+        {
+          "className": "mt--15",
+          "value": 53,
+          "name": "G",
+          "keyCode": 10,
+          "key": "KeyG"
+        },
+        {
+          "className": "mt--15",
+          "value": 54,
+          "name": "H",
+          "keyCode": 11,
+          "key": "KeyH"
+        },
+        {
+          "className": "mt--15",
+          "value": 55,
+          "name": "J",
+          "keyCode": 13,
+          "key": "KeyJ"
+        },
+        {
+          "className": "mt--15",
+          "value": 56,
+          "name": "K",
+          "keyCode": 14,
+          "key": "KeyK"
+        },
+        {
+          "className": "mt--15",
+          "value": 57,
+          "name": "L",
+          "keyCode": 15,
+          "key": "KeyL"
+        },
+        {
+          "className": "mt--15",
+          "value": 58,
+          "name": "Ö",
+          "keyCode": 51,
+          "key": "Semicolon"
+        },
+        {
+          "className": "mt--15",
+          "value": 59,
+          "name": "Ä",
+          "keyCode": 52,
+          "key": "Quote"
+        },
+        {
+          "className": "mt--15",
+          "value": 97,
+          "name": "#'",
+          "keyCode": 50,
+          "key": "Backslash"
+        },
+        {
+          "className": "mt--15 ml-auto",
+          "value": 108,
+          "name": "Bild↓",
+          "keyCode": 78,
+          "key": "PageDown"
+        }
+      ],
+      [
+        {
+          "className": "",
+          "value": 64,
+          "name": "L-Shift",
+          "keyCode": 225,
+          "key": "ShiftLeft"
+        },
+        {
+          "className": "",
+          "value": 98,
+          "name": "<|>",
+          "keyCode": 100,
+          "key": ""
+        },
+        {
+          "className": "",
+          "value": 65,
+          "name": "Y",
+          "keyCode": 29,
+          "key": "KeyZ"
+        },
+        {
+          "className": "",
+          "value": 66,
+          "name": "X",
+          "keyCode": 27,
+          "key": "KeyX"
+        },
+        {
+          "className": "",
+          "value": 67,
+          "name": "C",
+          "keyCode": 6,
+          "key": "KeyC"
+        },
+        {
+          "className": "",
+          "value": 68,
+          "name": "V",
+          "keyCode": 25,
+          "key": "KeyV"
+        },
+        {
+          "className": "",
+          "value": 69,
+          "name": "B",
+          "keyCode": 5,
+          "key": "KeyB"
+        },
+        {
+          "className": "",
+          "value": 70,
+          "name": "N",
+          "keyCode": 17,
+          "key": "KeyN"
+        },
+        {
+          "className": "",
+          "value": 71,
+          "name": "Mµ",
+          "keyCode": 16,
+          "key": "KeyM"
+        },
+        {
+          "className": "",
+          "value": 72,
+          "name": ",;",
+          "keyCode": 54,
+          "key": "Comma"
+        },
+        {
+          "className": "",
+          "value": 73,
+          "name": ".:",
+          "keyCode": 55,
+          "key": "Period"
+        },
+        {
+          "className": "",
+          "value": 74,
+          "name": "-_",
+          "keyCode": 56,
+          "key": "Slash"
+        },
+        {
+          "className": "w-24",
+          "value": 75,
+          "name": "R-Shift",
+          "keyCode": 229,
+          "key": "ShiftRight"
+        },
+        {
+          "className": "mr-15",
+          "value": 90,
+          "name": "↑",
+          "keyCode": 82,
+          "key": "ArrowUp"
+        }
+      ],
+      [
+        {
+          "className": "",
+          "value": 80,
+          "name": "Strg",
+          "keyCode": 224,
+          "key": "ControlLeft"
+        },
+        {
+          "className": "w-18",
+          "value": 81,
+          "name": "L-Win",
+          "keyCode": 227,
+          "key": "MetaLeft"
+        },
+        {
+          "className": "w-18",
+          "value": 82,
+          "name": "L-Alt",
+          "keyCode": 226,
+          "key": "AltLeft"
+        },
+        {
+          "className": "flex-1",
+          "value": 83,
+          "name": "Spacebar",
+          "keyCode": 44,
+          "key": "Space"
+        },
+        {
+          "className": "w-18",
+          "value": 84,
+          "name": "AltGr",
+          "keyCode": 230,
+          "key": "AltRight"
+        },
+        {
+          "className": "w-18",
+          "value": 85,
+          "name": "Fn",
+          "keyCode": 175,
+          "key": "-1"
+        },
+        {
+          "className": "",
+          "value": 87,
+          "name": "Strg",
+          "keyCode": 228,
+          "key": "ControlLeft"
+        },
+        {
+          "className": "ml-5",
+          "value": 88,
+          "name": "←",
+          "keyCode": 80,
+          "key": "ArrowLeft"
+        },
+        {
+          "className": "",
+          "value": 89,
+          "name": "↓",
+          "keyCode": 81,
+          "key": "ArrowDown"
+        },
+        {
+          "className": "",
+          "value": 91,
+          "name": "→",
+          "keyCode": 79,
+          "key": "ArrowRight"
+        }
+      ]
+    ],
+    "gameModeInfo": {
+      "gameMode": 0,
+      "fnSwitch": 0,
+      "sleepTime": 5,
+      "keyDelay": 5,
+      "reportRate": 0,
+      "systemMode": 0,
+      "tftDisplayTime": 0,
+      "topDeadZone": 0,
+      "bottomDeadZone": 0,
+      "stabilityMode": 0,
+      "autoCalibration": 0,
+      "singleKeyWakeup": 0
+    },
+    "ledEffect": {
+      "mode": 2,
+      "red": 0,
+      "green": 130,
+      "blue": 30,
+      "driverSetting": 255,
+      "secondaryRed": 0,
+      "secondaryGreen": 0,
+      "secondaryBlue": 0,
+      "colorMode": 0,
+      "brightness": 3,
+      "speed": 5,
+      "direction": 0,
+      "effectModeType": 0,
+      "checkCodeL": 170,
+      "checkCodeH": 85
+    },
+    "customLedData": [
+      {
+        "ledId": 0,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 1,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 2,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 3,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 4,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 5,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 6,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 7,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 8,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 9,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 10,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 11,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 12,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 13,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 14,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 15,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 16,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 17,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 18,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 19,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 20,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 21,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 22,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 23,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 24,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 25,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 26,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 27,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 28,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 29,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 30,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 31,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 32,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 33,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 34,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 35,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 36,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 37,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 38,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 39,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 40,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 41,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 42,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 43,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 44,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 45,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 46,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 47,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 48,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 49,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 50,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 51,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 52,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 53,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 54,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 55,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 56,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 57,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 58,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 59,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 60,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 61,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 62,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 63,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 64,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 65,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 66,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 67,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 68,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 69,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 70,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 71,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 72,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 73,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 74,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 75,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 76,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 77,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 78,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 79,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 80,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 81,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 82,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 83,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 84,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 85,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 86,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 87,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 88,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 89,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 90,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 91,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 92,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 93,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 94,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 95,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 96,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 97,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 98,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 99,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 100,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 101,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 102,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 103,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 104,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 105,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 106,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 107,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 108,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 109,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 110,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 111,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 112,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 113,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 114,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 115,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 116,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 117,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 118,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 119,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 120,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 121,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 122,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 123,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 124,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 125,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 126,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      },
+      {
+        "ledId": 127,
+        "red": 0,
+        "green": 0,
+        "blue": 0
+      }
+    ],
+    "macroDataList": [],
+    "profileName": "mario"
+  }
+}

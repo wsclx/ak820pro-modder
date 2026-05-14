@@ -1,0 +1,60 @@
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/WixTools/
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+.DS_Store
+
+# macOS
+.AppleDouble
+.LSOverride
+
+# Reverse-engineering captures (potentially large, possibly sensitive)
+docs/reverse-engineering/captures/*.pcap
+docs/reverse-engineering/captures/*.pcapng
+
+# Build artifacts
+*.dmg
+*.app
+*.deb
+*.msi
+*.exe
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Claude Code (lokale Overrides bleiben pro-Maschine)
+.claude/settings.local.json
+
+# Runtime caches from previous tool sessions
+.swarm/
+.playwright-mcp/
+agentdb.rvf
+agentdb.rvf.lock
+ruvector.db
+*.rvf
+
+# TypeScript / Vite build artifacts
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts

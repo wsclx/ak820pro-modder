@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+
+  "_comment": "Projektlokale Claude-Code-Konfiguration für ak820pro. Ziel: möglichst schlanker MCP-Footprint, damit Sub-Agent-Spawns nicht den 26K-Token-Block aus dem globalen CLAUDE.md + alle MCP-Schemas mitschleppen müssen ('Prompt is too long' Bug). Nur `playwright` ist hier nötig (für RE-Scrapes der AJAZZ online driver bundles).",
+
+  "enabledMcpjsonServers": ["playwright"],
+  "disabledMcpjsonServers": ["filesystem", "github", "tailscale"],
+  "enableAllProjectMcpServers": false,
+
+  "includeCoAuthoredBy": true,
+
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo run:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo fmt:*)",
+      "Bash(cargo tauri:*)",
+      "Bash(pnpm:*)",
+      "Bash(npm run:*)",
+      "Bash(npx tauri:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(./target/debug/ak820:*)",
+      "Bash(./target/release/ak820:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(gh:*)",
+      "Bash(ls:*)",
+      "Bash(pwd)",
+      "Bash(rg:*)",
+      "Bash(jq:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(eval:*)"
+    ]
+  }
+}

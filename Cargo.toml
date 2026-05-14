@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ak820-protocol",
+    "crates/ak820-cli",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Mario Lohe <mariolohe@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/mariolohe/ak820pro"
+rust-version = "1.82"
+
+[workspace.dependencies]
+hidapi = "2.6"
+thiserror = "2.0"
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hex = "0.4"
+time = { version = "0.3", features = ["formatting", "local-offset", "macros"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

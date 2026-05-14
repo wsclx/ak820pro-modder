@@ -1,0 +1,21 @@
+[package]
+name = "ak820-protocol"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Core protocol library for the Epomaker / Ajazz AK820 Pro keyboard"
+
+[lib]
+name = "ak820_protocol"
+path = "src/lib.rs"
+
+[dependencies]
+hidapi = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+hex = { workspace = true }
+time = { workspace = true }
