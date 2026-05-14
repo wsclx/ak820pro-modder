@@ -401,13 +401,22 @@ function KeyboardSurface({
   automations: AutomationSummary[];
   onSelect: (slot: number | null) => void;
 }) {
-  const NAV_LABELS = new Set(["Ende", "Bild↑", "Bild↓"]);
-  const mainRows = layout.map((row) =>
-    NAV_LABELS.has(row[row.length - 1]?.label ?? "") ? row.slice(0, -1) : row,
-  );
+  // Detect the right-hand navigation cluster by **slot number** rather
+  // than by label. Slots 107 (End), 105 (PgUp) and 108 (PgDn) are
+  // firmware-constant across every AK820 Pro layout; their labels vary
+  // wildly (Ende/Bild↑/Bild↓ on DE, End/PgUp/PgDn on UK/ANSI,
+  // Fin/Pg Préc/Pg Suiv on FR, Fin/Re Pág/Av Pág on ES). The old
+  // label-set was DE-only, which left FR/ES/UK/ANSI rendering these
+  // caps at the **end of the main row** where they collided visually
+  // with the ISO Enter's bottom-left hook.
+  const NAV_SLOTS = new Set([107, 105, 108]);
+  const mainRows = layout.map((row) => {
+    const last = row[row.length - 1];
+    return last && NAV_SLOTS.has(last.slot) ? row.slice(0, -1) : row;
+  });
   const navByRow = layout.map((row) => {
     const last = row[row.length - 1];
-    return last && NAV_LABELS.has(last.label) ? last : null;
+    return last && NAV_SLOTS.has(last.slot) ? last : null;
   });
 
   const TFT_HEIGHT = CELL * 2 + ROW_GAP;
