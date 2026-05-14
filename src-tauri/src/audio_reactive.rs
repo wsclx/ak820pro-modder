@@ -154,6 +154,19 @@ async fn run_loop(
         tracing::warn!(?e, "audio_reactive: failed to switch into custom mode");
     }
 
+    // Dedup against the previously-sent frame. With silence (or any
+    // steady-state audio), the analyzer settles into a constant Frame
+    // and `signature_of` collapses to a constant `(bass, mids, highs)`
+    // triple. Sending the *same* 10-chunk HID transfer 15× per second
+    // turned out to overrun the firmware's pipeline (visible flicker
+    // even with the toggle on and no music playing). Skipping unchanged
+    // frames makes the silence case zero-traffic and the music case
+    // exactly as busy as the music demands.
+    //
+    // `None` on the first iteration forces a send so the keyboard
+    // actually picks up the initial floor pattern.
+    let mut last_sig: Option<SpectrumSignature> = None;
+
     loop {
         // Check stop signal up-front so a long-running TCC dialog that
         // resolved into a working capture but then got cancelled doesn't
@@ -176,12 +189,23 @@ async fn run_loop(
 
         if pcm.len() >= FFT_LEN {
             let frame = analyzer.analyze(&pcm);
-            let map = build_spectrum_map(frame);
-            if let Err(e) = write_custom_led(&conn, map).await {
-                // Don't bail on a single HID error — the auto-reconnect
-                // logic in `ConnState::with` already cleared the cached
-                // handle, and the next tick will re-open. Just log.
-                tracing::debug!(?e, "audio_reactive: set_custom_led failed (will retry)");
+            let sig = signature_of(frame);
+            if Some(sig) != last_sig {
+                let map = build_spectrum_map(frame);
+                match write_custom_led(&conn, map).await {
+                    Ok(()) => last_sig = Some(sig),
+                    Err(e) => {
+                        // Don't bail on a single HID error — the auto-
+                        // reconnect logic in `ConnState::with` already
+                        // cleared the cached handle, the next tick will
+                        // re-open. Keep `last_sig` so we don't re-attempt
+                        // the same dead frame immediately.
+                        tracing::debug!(
+                            ?e,
+                            "audio_reactive: set_custom_led failed (will retry on next change)"
+                        );
+                    }
+                }
             }
         }
 
@@ -248,24 +272,60 @@ async fn write_custom_led(conn: &crate::ConnState, map: CustomLedMap) -> Result<
 /// land at higher slot indices and pick up the rightmost (highs) band
 /// as a side effect. That's intentional: it puts the navigation cluster
 /// in the same colour zone visually.
+/// Per-band channel value, already gamma-shaped and floor-clamped.
+/// Three numbers fully determine the entire spectrum frame — every LED
+/// in the map below is one of these three (or zero on the off-channel),
+/// so the audio loop dedupes against this triple instead of hashing 384
+/// bytes of map. Same `Eq` semantics, much cheaper to compute and compare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SpectrumSignature {
+    pub bass: u8,
+    pub mids: u8,
+    pub highs: u8,
+}
+
+fn band_to_channel(band: f32) -> u8 {
+    // Gamma-correct so mid-loudness reads as a proper mid-brightness
+    // rather than the squashed-middle look that linear scaling produces
+    // against a CRT-style display response. Then re-map into
+    // [BRIGHTNESS_FLOOR..=1] so quiet moments never blank a LED fully —
+    // the keyboard keeps its structure visible at all times and loud
+    // passages feel additive.
+    let shaped = band.clamp(0.0, 1.0).powf(BAND_GAMMA);
+    let scaled = BRIGHTNESS_FLOOR + shaped * (1.0 - BRIGHTNESS_FLOOR);
+    (scaled * CHANNEL_MAX) as u8
+}
+
+fn signature_of(frame: Frame) -> SpectrumSignature {
+    SpectrumSignature {
+        bass: band_to_channel(frame.bass),
+        mids: band_to_channel(frame.mids),
+        highs: band_to_channel(frame.highs),
+    }
+}
+
+/// **Spectrum** preset — divides the keyboard into three vertical zones
+/// based on the (col = slot % 16) coordinate of each LED:
+///
+/// * cols  0..= 4 → red, brightness = `frame.bass`
+/// * cols  5..=10 → green, brightness = `frame.mids`
+/// * cols 11..=15 → blue, brightness = `frame.highs`
+///
+/// The slot/16 modulo is a rough approximation of physical column on
+/// the AK820 Pro's ISO layout — special keys (Enter, Backspace, arrows)
+/// land at higher slot indices and pick up the rightmost (highs) band
+/// as a side effect. That's intentional: it puts the navigation cluster
+/// in the same colour zone visually.
 fn build_spectrum_map(frame: Frame) -> CustomLedMap {
+    let sig = signature_of(frame);
     let leds = (0..LED_COUNT as u8)
         .map(|id| {
             let col = id % 16;
-            let (band, channel) = match col {
-                0..=4 => (frame.bass, Channel::Red),
-                5..=10 => (frame.mids, Channel::Green),
-                _ => (frame.highs, Channel::Blue),
+            let (v, channel) = match col {
+                0..=4 => (sig.bass, Channel::Red),
+                5..=10 => (sig.mids, Channel::Green),
+                _ => (sig.highs, Channel::Blue),
             };
-            // Gamma-correct so mid-loudness reads as a proper mid-brightness
-            // rather than the squashed-middle look that linear scaling
-            // produces against a CRT-style display response. Then clamp into
-            // [BRIGHTNESS_FLOOR..=1] so quiet moments never blank a LED
-            // fully — the keyboard keeps its structure visible at all times
-            // and loud passages feel additive.
-            let shaped = band.clamp(0.0, 1.0).powf(BAND_GAMMA);
-            let scaled = BRIGHTNESS_FLOOR + shaped * (1.0 - BRIGHTNESS_FLOOR);
-            let v = (scaled * CHANNEL_MAX) as u8;
             let (red, green, blue) = match channel {
                 Channel::Red => (v, 0, 0),
                 Channel::Green => (0, v, 0),
