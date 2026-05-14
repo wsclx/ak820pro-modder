@@ -1,13 +1,27 @@
-import type { PropsWithChildren, ReactNode } from "react";
+import { useEffect, useState, type PropsWithChildren, type ReactNode } from "react";
 import { BatteryBar, prettyProduct } from "./ui";
 import { APP_CREDIT, APP_HOMEPAGE } from "../version";
 import { resolveLayout, DEFAULT_LAYOUT_ID } from "../data/layouts";
+import { Moon, Sun } from "lucide-react";
+import { getTheme, toggleTheme, type Theme } from "../theme";
 
 export interface NavItem<T extends string> {
   id: T;
   label: string;
   icon: ReactNode;
   comingSoon?: boolean;
+}
+
+/** Subscribe to the active theme. Re-renders when `themechange` fires from
+ *  `theme.ts::setTheme()` — both manual toggle and system-pref change drive it. */
+function useTheme(): Theme {
+  const [theme, set] = useState<Theme>(getTheme());
+  useEffect(() => {
+    const onChange = (e: Event) => set((e as CustomEvent<Theme>).detail);
+    window.addEventListener("themechange", onChange);
+    return () => window.removeEventListener("themechange", onChange);
+  }, []);
+  return theme;
 }
 
 export function Layout<T extends string>({
@@ -33,6 +47,7 @@ export function Layout<T extends string>({
   /** Lets a view (e.g. Keymap) opt out of the standard ≤960 px content cap. */
   wide?: boolean;
 }>) {
+  const theme = useTheme();
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {/* Sidebar */}
@@ -124,12 +139,24 @@ export function Layout<T extends string>({
             >
               {APP_CREDIT}
             </a>
-            <span
-              className="rounded-sm border border-line bg-surface-base px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-fg-3"
-              title={`Active keyboard layout. v0.5.0-beta is built for ${resolveLayout(DEFAULT_LAYOUT_ID).displayName} only — other variants are on the roadmap.`}
-            >
-              {resolveLayout(DEFAULT_LAYOUT_ID).displayName}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={toggleTheme}
+                className="flex h-6 w-6 items-center justify-center rounded-sm border border-line bg-surface-base text-fg-2 transition hover:border-accent-500/60 hover:bg-accent-glow hover:text-fg-0"
+                title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              >
+                {theme === "dark"
+                  ? <Sun size={12} strokeWidth={1.8} />
+                  : <Moon size={12} strokeWidth={1.8} />}
+              </button>
+              <span
+                className="rounded-sm border border-line bg-surface-base px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-fg-3"
+                title={`Active keyboard layout. v0.5.0-beta is built for ${resolveLayout(DEFAULT_LAYOUT_ID).displayName} only — other variants are on the roadmap.`}
+              >
+                {resolveLayout(DEFAULT_LAYOUT_ID).displayName}
+              </span>
+            </div>
           </div>
         </footer>
       </aside>

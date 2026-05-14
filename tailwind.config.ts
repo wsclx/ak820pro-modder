@@ -16,38 +16,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Surface elevation 0–4. base = window background, surface = sidebar,
-        // elevated = cards, overlay = popovers/modals, raised = active states.
-        surface: {
-          base:     "#0b0c10",  // L≈12 — deepest, never pure black
-          surface:  "#11131a",  // L≈14 — sidebar
-          elevated: "#171a23",  // L≈18 — cards
-          raised:   "#1d212c",  // L≈22 — hover/active card
-          overlay:  "#252a36",  // L≈26 — popovers
-        },
-        // Foreground steps. f0 = primary text, f1 = secondary, f2 = body-detail,
-        // f3 = quiet-but-legible, f4 = disabled.
+        // Surface + foreground tokens reference CSS variables defined in
+        // src/index.css. Variables flip values when <html> gets
+        // data-theme="light", so every Tailwind utility (text-fg-0,
+        // bg-surface-elevated, …) re-themes automatically.
         //
-        // Contrast against surface.base (#0b0c10) — all values pass WCAG AA
-        // for normal text now (was previously fail for f2 / f3):
-        //   f0 ≈ 14.9 : 1   (AAA)
-        //   f1 ≈ 10.4 : 1   (AAA)
-        //   f2 ≈ 6.7  : 1   (AA, comfortable body)
-        //   f3 ≈ 4.7  : 1   (AA, quieter — minimums for non-bold 12 px)
-        //   f4 ≈ 2.8  : 1   (intentionally below AA — disabled state)
-        fg: {
-          0: "#f3f5fb",
-          1: "#d4d8e3",
-          2: "#abb1c2",
-          3: "#8e95a7",
-          4: "#5a6076",
+        // Authored values + contrast notes live in index.css.
+        surface: {
+          base:     "rgb(var(--surface-base)     / <alpha-value>)",
+          surface:  "rgb(var(--surface-surface)  / <alpha-value>)",
+          elevated: "rgb(var(--surface-elevated) / <alpha-value>)",
+          raised:   "rgb(var(--surface-raised)   / <alpha-value>)",
+          overlay:  "rgb(var(--surface-overlay)  / <alpha-value>)",
         },
-        // Hairlines / dividers — lifted a notch so borders are actually visible
-        // on cards (subtle was barely there before).
+        fg: {
+          0: "rgb(var(--fg-0) / <alpha-value>)",
+          1: "rgb(var(--fg-1) / <alpha-value>)",
+          2: "rgb(var(--fg-2) / <alpha-value>)",
+          3: "rgb(var(--fg-3) / <alpha-value>)",
+          4: "rgb(var(--fg-4) / <alpha-value>)",
+        },
         line: {
-          subtle: "#232838",
-          DEFAULT: "#303652",
-          strong: "#444b66",
+          subtle:  "rgb(var(--line-subtle)  / <alpha-value>)",
+          DEFAULT: "rgb(var(--line-default) / <alpha-value>)",
+          strong:  "rgb(var(--line-strong)  / <alpha-value>)",
         },
         // Accent (lilac → indigo). Each step ≈ +6 L in OKLCH.
         accent: {
