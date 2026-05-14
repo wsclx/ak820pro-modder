@@ -220,6 +220,7 @@ export {
   Keyboard,
   Zap as Macro,
   Monitor as Screen,
+  Workflow as Automation,
   RefreshCw,
   Check,
   AlertCircle,

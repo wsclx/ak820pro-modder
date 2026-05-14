@@ -68,3 +68,26 @@ export interface NowPlaying {
   artist: string | null;
   album: string | null;
 }
+
+/* ---- Host-side automations (Phase 6: AppleScript / Shortcut / Shell) ---- */
+
+export type AutomationKind = "apple_script" | "shortcut" | "shell";
+
+export interface Automation {
+  id: number;
+  name: string;
+  description: string;
+  kind: AutomationKind;
+  payload: string;
+  created_at: number;
+  updated_at: number;
+  /** v0.7 placeholder — HID code of the marker key (`null` for now). */
+  marker_hid: number | null;
+}
+
+export interface AutomationRunResult {
+  exit_code: number | null;
+  stdout: string;
+  stderr: string;
+  success: boolean;
+}

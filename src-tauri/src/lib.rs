@@ -8,11 +8,13 @@ use ak820_protocol::{
     Connection, DeviceInfo,
 };
 use serde::Serialize;
-use tauri::State;
+use tauri::{Manager, State};
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
+mod automations;
 mod now_playing;
+use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
 
 #[derive(Debug, thiserror::Error, Serialize)]
@@ -267,6 +269,64 @@ fn macro_limits() -> MacroLimits {
     }
 }
 
+/// List every saved automation. Returns an empty list on first launch
+/// (no file yet) — that's deliberate, not an error.
+#[tauri::command]
+async fn list_automations(app: tauri::AppHandle) -> Result<Vec<Automation>, AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    tokio::task::spawn_blocking(move || automations::load(dir))
+        .await
+        .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+        .map_err(AppError::Protocol)
+}
+
+#[tauri::command]
+async fn save_automations(app: tauri::AppHandle, list: Vec<Automation>) -> Result<(), AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    tokio::task::spawn_blocking(move || automations::save(dir, &list))
+        .await
+        .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+        .map_err(AppError::Protocol)
+}
+
+#[tauri::command]
+async fn run_automation(app: tauri::AppHandle, id: u64) -> Result<RunResult, AppError> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
+    let list = tokio::task::spawn_blocking({
+        let dir = dir.clone();
+        move || automations::load(dir)
+    })
+    .await
+    .map_err(|e| AppError::Protocol(format!("join: {e}")))?
+    .map_err(AppError::Protocol)?;
+    let automation = list
+        .into_iter()
+        .find(|a| a.id == id)
+        .ok_or_else(|| AppError::Protocol(format!("automation {id} not found")))?;
+    let res = tokio::task::spawn_blocking(move || automations::run(&automation))
+        .await
+        .map_err(|e| AppError::Protocol(format!("join: {e}")))?;
+    Ok(res)
+}
+
+/// Enumerate macOS Shortcuts the user has installed. Empty list on
+/// non-macOS or when the `shortcuts` CLI isn't available (pre-Monterey).
+#[tauri::command]
+async fn list_shortcuts() -> Vec<String> {
+    tokio::task::spawn_blocking(automations::list_shortcuts)
+        .await
+        .unwrap_or_default()
+}
+
 /// macOS Now-Playing snapshot — covers Music.app and Spotify desktop today.
 /// Returns the "nothing playing" sentinel on non-macOS or when nothing is
 /// playing, distinguishing both from infrastructure failure (which surfaces
@@ -361,6 +421,10 @@ pub fn run() {
             get_custom_led,
             set_custom_led,
             get_now_playing,
+            list_automations,
+            save_automations,
+            run_automation,
+            list_shortcuts,
         ])
         .setup(|app| {
             use tauri::Manager;

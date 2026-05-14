@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Automations } from "./views/Automations";
 import { Connect } from "./views/Connect";
 import { Keymap } from "./views/Keymap";
 import { Lighting } from "./views/Lighting";
@@ -13,10 +14,18 @@ import {
   Keyboard,
   Macro,
   Screen,
+  Automation,
   type NavItem,
 } from "./components/Layout";
 
-type Tab = "connect" | "lighting" | "system" | "keymap" | "macros" | "tft";
+type Tab =
+  | "connect"
+  | "lighting"
+  | "system"
+  | "keymap"
+  | "macros"
+  | "automations"
+  | "tft";
 
 const ICON_PROPS = { size: 16, strokeWidth: 1.6 } as const;
 
@@ -26,6 +35,7 @@ const NAV: NavItem<Tab>[] = [
   { id: "system", label: "System", icon: <Settings {...ICON_PROPS} /> },
   { id: "keymap", label: "Keymap & Knob", icon: <Keyboard {...ICON_PROPS} /> },
   { id: "macros", label: "Macros", icon: <Macro {...ICON_PROPS} /> },
+  { id: "automations", label: "Automations", icon: <Automation {...ICON_PROPS} /> },
   { id: "tft", label: "TFT Display", icon: <Screen {...ICON_PROPS} />, comingSoon: true },
 ];
 
@@ -80,6 +90,7 @@ export default function App() {
       {tab === "system" && <System />}
       {tab === "keymap" && <Keymap />}
       {tab === "macros" && <Macros />}
+      {tab === "automations" && <Automations />}
     </Layout>
   );
 }
