@@ -34,7 +34,7 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 | **Keyboard-triggered automations** | ❌ | ✅ bind AppleScripts to physical keys via F13–F24 markers |
 | **Now-Playing reader (Music + Spotify)** | ❌ | ✅ live in the System view |
 | **Cross-cutting presets** | ❌ | ✅ 10 curated profiles (Gaming / Dev / Office / Creative / Lifestyle) |
-| Audio-reactive lighting | ❌ | 🛣 planned (macOS ScreenCaptureKit) |
+| Audio-reactive lighting | ❌ | 🧪 alpha — pipeline works, real-music smoothness still WIP |
 | Now-playing on TFT | ❌ | 🛣 planned (gated on TFT activation RE) |
 | Profile sync across machines | ❌ | 🛣 planned (iCloud Drive) |
 | Open source | ❌ | ✅ MIT |
@@ -133,6 +133,13 @@ Full CLI help is `ak820 --help`.
 - System-pref aware on first launch (`prefers-color-scheme`)
 - Manual toggle in the sidebar footer · persisted to `localStorage`
 - Driven by CSS custom properties under `data-theme="dark|light"` on `<html>`, so adding a new theme later (e.g. a high-contrast variant) is one CSS block
+
+### Audio-reactive lighting (Alpha — opt-in)
+- macOS-only · macOS 13+ · uses Apple's [ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit) for the system-audio tap (Screen-Recording permission required, same TCC bucket as the screen-capture API even for audio-only streams)
+- Pure-Rust FFT pipeline (`realfft` crate) in `crates/ak820-audio-reactive/` — splits the spectrum into bass / mids / highs bands, applies a Hann window + dB scaling + asymmetric EMA smoothing
+- Spectrum preset maps each band to a vertical zone on the keyboard: cols 0-4 red (bass), cols 5-10 green (mids), cols 11-15 blue (highs); gamma + brightness floor so the keyboard's structure stays visible even between beats
+- **Known limitations (why this is alpha)**: the wire-level cadence of `SET_CUSTOM_LED_DATA` (10 chunked HID reports per frame) makes the firmware's per-key RGB pipeline visibly stutter on busy music. Frame deduplication helps but doesn't fully eliminate the flicker. Improving this needs a protocol-layer change (skip the per-chunk ACK in `set_many_at` for write-only payloads).
+- **Two-stage UI gate**: Lighting view has a "Locked / Unlocked" toggle for the experimental opt-in, then a "Streaming Off / On" toggle for the actual capture. The unlock persists across launches via `localStorage` so contributors don't re-click it, but the casual user can't trip the feature accidentally.
 
 ### Coming next
 See the [Roadmap](#roadmap) section and the [`docs/HANDOFF.md`](docs/HANDOFF.md) file for the engineering trail.

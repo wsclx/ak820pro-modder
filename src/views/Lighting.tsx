@@ -26,10 +26,26 @@ export function Lighting() {
   const [autoApply, setAutoApply] = useState(true);
   const [lastApplied, setLastApplied] = useState<string | null>(null);
 
-  // Audio-reactive lighting (macOS only). The backend keeps the
-  // authoritative state — we poll every 3s so a loop self-exit (capture
-  // crashed, permission revoked) clears the toggle without the user
-  // having to click anything.
+  // Audio-reactive lighting (macOS only) — currently **alpha**: the
+  // wire-level cadence makes it flicker on real music. We gate it behind
+  // an explicit "unlock experimental" toggle so a casual user doesn't
+  // accidentally turn on something that looks broken, and persist the
+  // unlock to localStorage so contributors don't have to re-click it on
+  // every page load.
+  //
+  // Backend keeps the authoritative streaming state — we poll every 3s
+  // so a loop self-exit (capture crashed, permission revoked) clears
+  // the toggle without the user having to click anything.
+  const AUDIO_REACTIVE_UNLOCK_KEY = "ak820:audio-reactive-unlocked";
+  const [audioReactiveUnlocked, setAudioReactiveUnlocked] = useState<boolean>(
+    () => {
+      try {
+        return window.localStorage.getItem(AUDIO_REACTIVE_UNLOCK_KEY) === "true";
+      } catch {
+        return false;
+      }
+    },
+  );
   const [audioReactive, setAudioReactive] = useState(false);
   const [audioBusy, setAudioBusy] = useState(false);
 
@@ -83,6 +99,27 @@ export function Lighting() {
       setAudioReactive(false);
     } finally {
       setAudioBusy(false);
+    }
+  }
+
+  /**
+   * Lock/unlock the experimental feature. Locking while streaming
+   * also stops the stream — otherwise an alpha-feature stays running
+   * even though the user has signalled they want it "off".
+   */
+  async function toggleAudioReactiveUnlock(unlocked: boolean) {
+    setAudioReactiveUnlocked(unlocked);
+    try {
+      window.localStorage.setItem(
+        AUDIO_REACTIVE_UNLOCK_KEY,
+        unlocked ? "true" : "false",
+      );
+    } catch {
+      // localStorage can throw in private-browsing or quota cases —
+      // swallow; worst case the user re-unlocks next session.
+    }
+    if (!unlocked && audioReactive) {
+      await toggleAudioReactive(false);
     }
   }
 
@@ -167,24 +204,66 @@ export function Lighting() {
 
       <div className="grid gap-6">
         <Card
-          title="Audio-reactive"
+          title={
+            <span className="inline-flex items-center gap-2">
+              <span>Audio-reactive</span>
+              <Badge tone="warn">Alpha</Badge>
+            </span>
+          }
           action={
-            <Toggle checked={audioReactive} onChange={toggleAudioReactive} disabled={audioBusy}>
-              {audioReactive ? "Streaming" : "Off"}
+            <Toggle
+              checked={audioReactiveUnlocked}
+              onChange={toggleAudioReactiveUnlock}
+            >
+              {audioReactiveUnlocked ? "Unlocked" : "Locked"}
             </Toggle>
           }
         >
           <p className="text-sm text-fg-2">
-            Taps the macOS system-audio mix, runs an FFT, and paints the keyboard with
-            bass / mids / highs as red / green / blue across vertical zones. While
-            on, the firmware sits in <code>custom</code> mode and the controls
-            below are paused — turn this off to set static modes or per-key colours.
+            Taps the macOS system-audio mix, runs an FFT, and paints the keyboard
+            with bass / mids / highs as red / green / blue across vertical zones.
+            While streaming, the firmware sits in <code>custom</code> mode and the
+            controls below are paused.
+          </p>
+          <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-fg-1">
+            <strong className="text-amber-300">Experimental — use at your own risk.</strong>
+            <br />
+            Known issues: visible flicker on real music, the wire-level cadence
+            is sometimes faster than the firmware's per-key RGB pipeline can
+            ingest. The toggle below stays disabled until you opt in here,
+            so a casual user can't accidentally enable a feature that looks
+            broken. The opt-in persists across launches.
           </p>
           <p className="mt-2 text-xs text-fg-3">
             First run pops the macOS Screen Recording permission prompt — that's
             normal, ScreenCaptureKit shares the same TCC bucket even for
             audio-only capture. Once granted, the toggle works silently.
           </p>
+
+          <div
+            className={[
+              "mt-4 flex items-center justify-between border-t border-line/60 pt-4",
+              audioReactiveUnlocked ? "" : "pointer-events-none opacity-50",
+            ].join(" ")}
+          >
+            <div>
+              <p className="text-sm text-fg-1">Streaming</p>
+              <p className="text-xs text-fg-3">
+                {audioReactive
+                  ? "Live — keyboard is following the system audio mix."
+                  : audioReactiveUnlocked
+                  ? "Idle. Flip to start the FFT loop."
+                  : "Unlock above to enable."}
+              </p>
+            </div>
+            <Toggle
+              checked={audioReactive}
+              onChange={toggleAudioReactive}
+              disabled={!audioReactiveUnlocked || audioBusy}
+            >
+              {audioReactive ? "Streaming" : "Off"}
+            </Toggle>
+          </div>
         </Card>
 
         <div

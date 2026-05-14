@@ -6,9 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added — alpha
+- **Audio-reactive lighting (alpha)** — macOS-only · macOS 13+. New workspace crate `ak820-audio-reactive` wraps Apple's ScreenCaptureKit for system-audio capture and runs a Hann-windowed real FFT (`realfft` 3.5) → bass / mids / highs bands with dB scaling and asymmetric EMA smoothing. New "Spectrum" preset paints the three bands across the keyboard's vertical zones (red / green / blue). New `audio_reactive_start` / `_stop` / `_status` Tauri commands, new "Audio-reactive" card in the Lighting view with a **two-stage opt-in**: a `Locked / Unlocked` toggle that persists in `localStorage` (so contributors don't re-click), and a `Streaming Off / On` toggle that's disabled until unlocked. The card carries an `Alpha` badge and an `Experimental — use at your own risk` block. Known issues: visible flicker on real music because the 10-chunk HID transfer per frame outruns the firmware's per-key RGB pipeline; frame deduplication helps for the silence case but the real-music smoothness needs a protocol-layer change. New `ak820 audio meter` CLI subcommand prints band magnitudes + ASCII bars for smoke-testing the pipeline.
+
 Planned for 0.7.x
 - TFT image upload UI (drag-and-drop GIF / PNG → frame extract → resize / dither → upload). Gated on Phase 5b3 — USB pcap of the official Windows tool's activation sequence.
-- Audio-reactive lighting via macOS `ScreenCaptureKit` (system-audio tap + FFT → colour map).
+- Audio-reactive lighting smoothness pass — likely skip the per-chunk `read_response` in `set_many_at` for write-only payloads so the HID pipeline can keep up at >15 fps.
 - iCloud-Drive profile sync (macros + automations + lighting snapshots round-tripped through `~/Library/Mobile Documents`).
 - Browser-tab media support in Now-Playing (currently only Music.app + Spotify desktop).
 
