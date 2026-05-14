@@ -27,9 +27,20 @@ src-tauri/WixTools/
 .AppleDouble
 .LSOverride
 
-# Reverse-engineering captures (potentially large, possibly sensitive)
+# Reverse-engineering artefacts — these are vendor binaries / closed-source
+# JS bundles that we DO NOT redistribute. Each contributor downloads them
+# themselves from the URLs documented in docs/reverse-engineering/README.md.
 docs/reverse-engineering/captures/*.pcap
 docs/reverse-engineering/captures/*.pcapng
+docs/reverse-engineering/online-driver/**/*.js
+docs/reverse-engineering/online-driver/**/*.css
+docs/reverse-engineering/online-driver/**/*.html
+docs/reverse-engineering/online-driver/**/*.json
+docs/reverse-engineering/tools/**/*.exe
+docs/reverse-engineering/tools/**/*.dll
+docs/reverse-engineering/tools/**/*.zip
+docs/reverse-engineering/*.json
+docs/reverse-engineering/*.exe
 
 # Build artifacts
 *.dmg
