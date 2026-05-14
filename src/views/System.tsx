@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, BatteryBar, Button, Card, ErrorBanner, KVList, Mono, formatInt, hex4 } from "../components/ui";
 import { PageHeader } from "../components/Layout";
+import { NowPlayingCard } from "../components/NowPlayingCard";
 
 interface DeviceInfoReport {
   rom_size: number;
@@ -183,22 +184,26 @@ export function System() {
           </Card>
         </div>
 
-        <Card title="Other settings">
-          {gm === null ? (
-            <p className="text-sm text-fg-2">Reading…</p>
-          ) : (
-            <KVList
-              rows={[
-                { label: "Key delay", value: <Mono>{gm.key_delay}</Mono> },
-                { label: "Report rate", value: <Mono>{gm.report_rate}</Mono> },
-                { label: "TFT display time", value: <Mono>{gm.tft_display_time}</Mono> },
-                { label: "Stability mode", value: <Mono>{gm.stability_mode}</Mono> },
-                { label: "Auto calibration", value: <Mono>{gm.auto_calibration}</Mono> },
-                { label: "Single-key wakeup", value: <Mono>{gm.single_key_wakeup}</Mono> },
-              ]}
-            />
-          )}
-        </Card>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Card title="Other settings">
+            {gm === null ? (
+              <p className="text-sm text-fg-2">Reading…</p>
+            ) : (
+              <KVList
+                rows={[
+                  { label: "Key delay", value: <Mono>{gm.key_delay}</Mono> },
+                  { label: "Report rate", value: <Mono>{gm.report_rate}</Mono> },
+                  { label: "TFT display time", value: <Mono>{gm.tft_display_time}</Mono> },
+                  { label: "Stability mode", value: <Mono>{gm.stability_mode}</Mono> },
+                  { label: "Auto calibration", value: <Mono>{gm.auto_calibration}</Mono> },
+                  { label: "Single-key wakeup", value: <Mono>{gm.single_key_wakeup}</Mono> },
+                ]}
+              />
+            )}
+          </Card>
+
+          <NowPlayingCard />
+        </div>
       </div>
     </>
   );

@@ -12,6 +12,9 @@ use tauri::State;
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
+mod now_playing;
+use now_playing::NowPlaying;
+
 #[derive(Debug, thiserror::Error, Serialize)]
 #[serde(tag = "kind", content = "message")]
 pub enum AppError {
@@ -264,6 +267,20 @@ fn macro_limits() -> MacroLimits {
     }
 }
 
+/// macOS Now-Playing snapshot — covers Music.app and Spotify desktop today.
+/// Returns the "nothing playing" sentinel on non-macOS or when nothing is
+/// playing, distinguishing both from infrastructure failure (which surfaces
+/// as `Err` via the `osascript` exit code).
+#[tauri::command]
+async fn get_now_playing() -> Result<NowPlaying, AppError> {
+    // osascript is a cheap subprocess (~50–200 ms). Run it on tokio's
+    // blocking pool so it doesn't tie up an async worker.
+    let result = tokio::task::spawn_blocking(now_playing::fetch)
+        .await
+        .map_err(|e| AppError::Protocol(format!("now-playing join error: {e}")))?;
+    Ok(result.unwrap_or_else(NowPlaying::none))
+}
+
 /// Drop any cached HID handle so the next call has to re-enumerate and re-open
 /// the device. The UI exposes this as the manual "Reconnect" action and we
 /// also use it internally when the keyboard goes away (unplug, sleep, etc.).
@@ -343,6 +360,7 @@ pub fn run() {
             macro_limits,
             get_custom_led,
             set_custom_led,
+            get_now_playing,
         ])
         .setup(|app| {
             use tauri::Manager;

@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added (unreleased on `main`)
+- **Per-key RGB paint-mode editor** in the Lighting view. Selecting the `custom` mode shows a clickable keyboard surface; click-to-paint, brush palette, fill / clear helpers, debounced auto-apply. Wraps the wire-level `set_custom_led` + `apply_lighting(mode=custom)` sequence so the firmware actually renders the buffer.
+- **macOS Now-Playing reader** (Phase 6 preview): new card in the System view polls Music.app + Spotify desktop every 2 s and shows title / artist / album. Foundation for streaming the track to the TFT display once Phase 5b3 unblocks.
+
 ### Planned for 0.6.0
 - TFT image upload UI (drag-and-drop GIF / PNG → frame extract → resize / dither → upload).
-- Per-key RGB paint-mode editor in the Lighting view.
 - Audio-reactive lighting via macOS `ScreenCaptureKit` (system-audio tap + FFT → colour map).
+- Browser-tab media support in Now-Playing (currently only Music.app + Spotify desktop).
 
 ## [0.5.0-beta] — 2026-05-14
 

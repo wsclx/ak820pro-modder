@@ -56,3 +56,15 @@ export interface LedColor {
 export interface CustomLedMap {
   leds: LedColor[];
 }
+
+/* ---- macOS Now-Playing (Phase 6 preview path) ---- */
+
+/** Mirrors `NowPlaying` from `src-tauri/src/now_playing.rs`. */
+export interface NowPlaying {
+  /** "Music", "Spotify", or "none" when nothing is playing. */
+  source: string;
+  is_playing: boolean;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+}
