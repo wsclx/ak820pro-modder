@@ -1,7 +1,9 @@
 import { useEffect, useState, type PropsWithChildren, type ReactNode } from "react";
 import { BatteryBar, prettyProduct } from "./ui";
 import { APP_CREDIT, APP_HOMEPAGE } from "../version";
-import { resolveLayout, DEFAULT_LAYOUT_ID } from "../data/layouts";
+import { LAYOUTS } from "../data/layouts";
+import { useLayout } from "../data/layouts/use-layout";
+import type { LayoutId } from "../data/layouts";
 import { Moon, Sun } from "lucide-react";
 import { getTheme, toggleTheme, type Theme } from "../theme";
 
@@ -48,6 +50,7 @@ export function Layout<T extends string>({
   wide?: boolean;
 }>) {
   const theme = useTheme();
+  const { layoutId, layout, setLayoutId } = useLayout();
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {/* Sidebar */}
@@ -150,12 +153,21 @@ export function Layout<T extends string>({
                   ? <Sun size={12} strokeWidth={1.8} />
                   : <Moon size={12} strokeWidth={1.8} />}
               </button>
-              <span
-                className="rounded-sm border border-line bg-surface-base px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-fg-3"
-                title={`Active keyboard layout. v0.5.0-beta is built for ${resolveLayout(DEFAULT_LAYOUT_ID).displayName} only — other variants are on the roadmap.`}
+              <select
+                value={layoutId}
+                onChange={(e) => setLayoutId(e.target.value as LayoutId)}
+                title={`Active physical layout: ${layout.displayName}. ${layout.description}`}
+                className="appearance-none rounded-sm border border-line bg-surface-base px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider text-fg-3 hover:border-accent-500/60 hover:text-fg-0 focus:outline-none focus:ring-1 focus:ring-accent-500/60"
+                aria-label="Active keyboard layout"
               >
-                {resolveLayout(DEFAULT_LAYOUT_ID).displayName}
-              </span>
+                {Object.entries(LAYOUTS).map(([id, l]) =>
+                  l ? (
+                    <option key={id} value={id}>
+                      {l.displayName}
+                    </option>
+                  ) : null,
+                )}
+              </select>
             </div>
           </div>
         </footer>

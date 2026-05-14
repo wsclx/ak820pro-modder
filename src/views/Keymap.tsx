@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, Button, Card, ErrorBanner } from "../components/ui";
 import { PageHeader } from "../components/Layout";
-import { ISO_DE_LAYOUT_ROWS as ISO_DE_LAYOUT, type PhysicalKey } from "../data/layouts";
+import type { PhysicalKey } from "../data/layouts";
+import { useLayout } from "../data/layouts/use-layout";
 import { hidName } from "../data/hid-usage-names";
 import {
   ACTION_GROUPS,
@@ -64,6 +65,8 @@ function displayLabel(label: string): string {
 }
 
 export function Keymap() {
+  const { layout } = useLayout();
+  const layoutRows = layout.rows;
   const [layer, setLayer] = useState<Layer>("base");
   const [baseRemote, setBaseRemote] = useState<Keymap | null>(null);
   const [fnRemote, setFnRemote] = useState<Keymap | null>(null);
@@ -302,11 +305,11 @@ export function Keymap() {
             ? "Reading from keyboard…"
             : isDirty
               ? `${dirty.size} unsaved change${dirty.size === 1 ? "" : "s"} — click Save to commit`
-              : remapCountLabel(draft)
+              : remapCountLabel(draft, layoutRows)
         }
       >
         <KeyboardSurface
-          layout={ISO_DE_LAYOUT}
+          layout={layoutRows}
           km={draft}
           dirty={dirty}
           selectedSlot={selectedSlot}
@@ -332,9 +335,10 @@ export function Keymap() {
             )}
             <ActionPicker
               slot={selectedSlot}
-              defaultHid={defaultHidForSlot(selectedSlot)}
+              defaultHid={defaultHidForSlot(selectedSlot, layoutRows)}
               currentAction={draft?.slots[selectedSlot]}
               extraGroups={[macroActionGroup, automationActionGroup]}
+              layoutRows={layoutRows}
               onAssign={(a) => void assignAction(selectedSlot, a)}
             />
           </>
@@ -353,17 +357,17 @@ export function Keymap() {
   );
 }
 
-function remapCountLabel(km: Keymap): string {
+function remapCountLabel(km: Keymap, rows: PhysicalKey[][]): string {
   let n = 0;
   for (let i = 0; i < km.slots.length; i++) {
-    const def = defaultHidForSlot(i);
+    const def = defaultHidForSlot(i, rows);
     if (isRemapped(km.slots[i], def)) n += 1;
   }
   return n === 0 ? "Factory default — no overrides" : `${n} key${n === 1 ? "" : "s"} remapped`;
 }
 
-function defaultHidForSlot(slot: number): number | null {
-  for (const row of ISO_DE_LAYOUT) {
+function defaultHidForSlot(slot: number, rows: PhysicalKey[][]): number | null {
+  for (const row of rows) {
     for (const k of row) if (k.slot === slot) return k.hid;
   }
   return null;
@@ -654,12 +658,14 @@ function ActionPicker({
   defaultHid,
   currentAction,
   extraGroups,
+  layoutRows,
   onAssign,
 }: {
   slot: number;
   defaultHid: number | null;
   currentAction: KeyAction | undefined;
   extraGroups: (ActionGroup | null)[];
+  layoutRows: PhysicalKey[][];
   onAssign: (a: Action) => void;
 }) {
   const groups = useMemo<ActionGroup[]>(
@@ -672,7 +678,7 @@ function ActionPicker({
   const [groupId, setGroupId] = useState<string>(groups[0].id);
   const group = groups.find((g) => g.id === groupId) ?? groups[0];
 
-  const slotMeta = layoutSlotMeta(slot);
+  const slotMeta = layoutSlotMeta(slot, layoutRows);
 
   return (
     <div>
@@ -779,8 +785,8 @@ function actionPreview(a: KeyAction): string {
   }
 }
 
-function layoutSlotMeta(slot: number): PhysicalKey | null {
-  for (const row of ISO_DE_LAYOUT) for (const k of row) if (k.slot === slot) return k;
+function layoutSlotMeta(slot: number, rows: PhysicalKey[][]): PhysicalKey | null {
+  for (const row of rows) for (const k of row) if (k.slot === slot) return k;
   return null;
 }
 

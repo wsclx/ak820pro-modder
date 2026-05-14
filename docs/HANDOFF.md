@@ -441,22 +441,32 @@ becomes a priority, the only paths are (a) firmware-level RE (Sonix
 toolchain) or (b) empirical probing of unused slot numbers (13–15, 93–96,
 109–127) by writing a distinct test action and watching what fires.
 
-### 6.9b Physical layout: ISO-DE only — never mix
+### 6.9b Physical layout: ISO-DE verified, others unverified
 The AK820 Pro ships in at least five regional variants (ISO-DE, ANSI,
-ISO-FR, ISO-ES, ISO-UK, JIS). `v0.5.0-beta` is built and tested
-**exclusively** against the ISO-DE QWERTZ variant.
+ISO-FR, ISO-ES, ISO-UK, JIS). **Five layouts now ship**:
+
+- **ISO-DE** — ✅ hardware-verified against Mario's keyboard
+  (firmware 1.07).
+- **ANSI, ISO-UK, ISO-ES, ISO-FR** — 🧪 **unverified**. Hand-derived
+  from the ISO-DE export plus public AK820 Pro / 75 % conventions.
+  No real hardware was used to confirm slot ↔ key assignment. Users
+  on these variants get correctly-shaped legends but should report
+  visual mismatches.
+- **JIS** — still roadmap-only. Japanese boards have additional
+  physical keys (Henkan, Muhenkan, Kana) and a different bottom-row
+  count that doesn't map cleanly onto the slot allocation we
+  inferred from the ISO-DE firmware export. Needs hardware.
 
 The **wire protocol is layout-agnostic** — slot numbers are
 firmware-internal addresses, identical across variants. So lighting,
 system commands, per-key RGB, and TFT upload all work on every AK820
-Pro. The *Keymap view* is the one place where layout matters: it
-renders the on-screen surface from `src/data/layouts/iso-de.json`
-positions and labels.
+Pro regardless of which layout file the UI is rendering. The Keymap
+view + Custom-Lighting paint surface are the only places where the
+layout descriptor matters; both consume the active layout via
+`useLayout()` (`src/data/layouts/use-layout.ts`).
 
-If a user runs this app against an ANSI / FR / ES / UK / JIS unit, the
-keymap still functions (slot remaps still land where the user clicks)
-but the *legends* will be wrong. The sidebar shows a small `ISO-DE`
-badge so the user notices.
+The sidebar footer now has a layout `<select>` picker. The user's
+choice persists to `localStorage["ak820:layout"]`.
 
 **Architectural rule** (do not break): layout-aware branches go into
 `src/data/layouts/<id>.{json,ts}` ONLY. The Keymap view renders

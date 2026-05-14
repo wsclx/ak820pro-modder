@@ -199,7 +199,7 @@ Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hard
 | 6e — Now-playing on TFT | 🛣 | Gated on Phase 5b — stream the Now-Playing reader's snapshot to the keyboard's display |
 | 6f — iCloud profile sync | 🧪 beta | Automations library round-trips through `~/Library/Mobile Documents/com~apple~CloudDocs/ak820pro-modder/`. Toggle + Push/Pull/Refresh in System view. Per-record merge + custom-LED snapshots + settings come in 0.7.x. |
 | 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
-| 8 — Multi-layout | 🛣 | ANSI, ISO-FR, ISO-ES, ISO-UK, JIS variants. Cleanly isolated under `src/data/layouts/` with a layout-picker UI. The wire protocol already works for every variant; this is purely about the on-screen keyboard surface. |
+| 8 — Multi-layout | 🧪 beta | ANSI, ISO-UK, ISO-ES, ISO-FR variants shipped alongside ISO-DE; layout picker in the sidebar with `localStorage` persistence. All four are **🧪 unverified** — slot mapping hand-derived from the AJAZZ ISO-DE export without hardware confirmation. JIS deferred — Japanese boards need hardware verification due to extra physical keys (Henkan, Muhenkan). |
 
 ## Contributing
 

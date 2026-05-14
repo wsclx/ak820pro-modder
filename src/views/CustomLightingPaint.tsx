@@ -22,7 +22,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, Button, Card, ErrorBanner, Mono } from "../components/ui";
-import { ISO_DE_LAYOUT_ROWS, type PhysicalKey } from "../data/layouts";
+import { type PhysicalKey } from "../data/layouts";
+import { useLayout } from "../data/layouts/use-layout";
 import type { CustomLedMap, LedColor, LightingConfig } from "../types";
 import { formatError } from "../errors";
 
@@ -38,6 +39,8 @@ const DEFAULT_PAINT = "FFFFFF";
 const APPLY_DEBOUNCE_MS = 120;
 
 export function CustomLightingPaint({ inheritedConfig }: Props) {
+  const { layout } = useLayout();
+  const layoutRows = layout.rows;
   const [remote, setRemote] = useState<CustomLedMap | null>(null);
   const [draft, setDraft] = useState<LedColor[]>(() => emptyMap());
   const [paintColor, setPaintColor] = useState<string>(DEFAULT_PAINT);
@@ -235,7 +238,7 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
       </div>
 
       <PaintSurface
-        layout={ISO_DE_LAYOUT_ROWS}
+        layout={layoutRows}
         leds={draft}
         selected={selected}
         onPaint={(slot) => {

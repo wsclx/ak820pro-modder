@@ -3,9 +3,23 @@
  *
  * ## Current shipping coverage
  *
- * `v0.5.0-beta` is built and tested **only** against the **ISO-DE** (German
- * QWERTZ) layout. Selecting any other layout is intentionally not exposed
- * in the UI yet — see the README § Roadmap for the multi-layout milestone.
+ * Five layouts ship in this build:
+ *
+ * - **ISO-DE** (German QWERTZ) — ✅ verified against Mario's hardware.
+ * - **ANSI** (US English) — 🧪 unverified · structural rewrite from
+ *   ISO-DE: drops slot 98, flat 2.25 u Enter in row 3, `\|` at slot 97.
+ * - **ISO-UK** (British English) — 🧪 unverified · same physical
+ *   structure as ISO-DE, UK legends.
+ * - **ISO-ES** (Spanish) — 🧪 unverified · same physical structure
+ *   as ISO-DE, Spanish legends including `Ñ` and `Ç`.
+ * - **ISO-FR** (French AZERTY) — 🧪 unverified · same physical
+ *   structure as ISO-DE, AZERTY positional swaps (Q↔A, W↔Z, …).
+ *
+ * **JIS** remains roadmap-only until we can verify against hardware:
+ * Japanese boards have extra physical keys (Henkan, Muhenkan, Kana)
+ * and a different row-count in the bottom area, which doesn't map
+ * cleanly onto the slot allocation we inferred from the AK820 Pro
+ * ISO-DE firmware export.
  *
  * ## Adding a new layout (when its hardware variant has been verified)
  *
@@ -27,20 +41,36 @@
  * user (or default) picks.
  */
 
+import { ANSI_LAYOUT } from "./ansi";
 import { ISO_DE_LAYOUT } from "./iso-de";
+import { ISO_ES_LAYOUT } from "./iso-es";
+import { ISO_FR_LAYOUT } from "./iso-fr";
+import { ISO_UK_LAYOUT } from "./iso-uk";
 import type { KeyboardLayout, LayoutId } from "./types";
 
 export type { KeyboardLayout, LayoutId, PhysicalKey } from "./types";
 export { ISO_DE_LAYOUT, ISO_DE_LAYOUT_ROWS, ISO_DE_LAYOUT_SLOTS } from "./iso-de";
+export { ANSI_LAYOUT } from "./ansi";
+export { ISO_ES_LAYOUT } from "./iso-es";
+export { ISO_FR_LAYOUT } from "./iso-fr";
+export { ISO_UK_LAYOUT } from "./iso-uk";
 
 /**
  * Every layout the app *knows about*. Only entries with a corresponding
  * `.json` file present are runnable; the type union in `types.ts` enumerates
  * planned future entries so they show up in autocomplete, but the registry
  * is the source of truth for what's actually available at runtime.
+ *
+ * **Ordering matters** — the picker UI renders these in registration
+ * order. ISO-DE first because it's the only hardware-verified entry; the
+ * others sit after, alphabetised among themselves.
  */
 export const LAYOUTS: Partial<Record<LayoutId, KeyboardLayout>> = {
   "iso-de": ISO_DE_LAYOUT,
+  ansi: ANSI_LAYOUT,
+  "iso-es": ISO_ES_LAYOUT,
+  "iso-fr": ISO_FR_LAYOUT,
+  "iso-uk": ISO_UK_LAYOUT,
 };
 
 /** The layout the app uses unless / until the user picks a different one. */
