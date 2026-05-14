@@ -105,6 +105,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ak820pro-modder-macos-${{ github.sha }}
-          path: src-tauri/target/release/bundle/macos/*.app
+          # Cargo workspace puts build output under the *workspace-root*
+          # target/, not src-tauri/target/. Tauri's bundler then drops the
+          # .app at target/release/bundle/macos/AK820 Pro Modder.app —
+          # mind the spaces in the filename, that's why the glob is here.
+          path: target/release/bundle/macos/*.app
           if-no-files-found: error
           retention-days: 14
