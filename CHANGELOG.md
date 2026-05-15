@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+- **TFT survives Lighting / Keymap / Macros / Custom-LED / Game-Mode applies.** Mario reported the panel snapping back to its factory animation every time he saved a different tab. Confirmed against the AJAZZ web driver that `SET_LED_EFFECT` and a few siblings send no extra TFT bytes — the reset is firmware-side coupling, not a missing call from our side. Host-side fix: new `TftMemory` state in `src-tauri/src/tft_memory.rs` remembers the last user-requested TFT content (preset id or raw image bytes + fit mode) and a shared `restore_tft_quietly` helper re-uploads it after every `set_*` / `apply_*` command we suspect of triggering the firmware's TFT-reset path. The restore is a free no-op when the memory is empty (the common case for users who haven't opened the TFT view yet). `tft_factory_default` and the new `tft_forget_memory` Tauri command clear the memory so the user can explicitly opt out.
+
 ### Added
 - **TFT image upload (PNG / JPEG / GIF)** — new `tft_image` module in `ak820-protocol` decodes the file via the `image` crate (default-features off; PNG / JPEG / GIF only, no WebP / AVIF / BMP to keep the binary lean), fits the source to 128 × 128 in one of three modes (Fill = centre-crop edge-to-edge, Contain = letterbox preserving the whole image, Stretch = independent-axis scale), quantises to RGB565 LE, and hands the result to the existing chunked uploader. GIFs become multi-frame `TftAnimation`s with per-frame delays taken from the GIF's own metadata; truncated at 30 frames (the device-reported `tftMaxFrames` budget). MP4 / video out of scope — pulling in ffmpeg deps would double the binary; users decimate to GIF first. New native file-open dialog via `tauri-plugin-dialog`. New Tauri command `apply_tft_image(path, fit)`.
 - **TFT Factory Default button** — `tft_factory_default` Tauri command writes `SET_TFT_BUILT_IN_INDEX(0)` so the panel falls back to the firmware's boot-time animation. Useful when an upload looks broken and you want a known-good state.
@@ -15,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Known issues
 - TFT presets render only in the **upper half** of the panel on Mario's hardware. The web driver explicitly states `AK820 → 128 × 128`, so dimensions aren't the bug. Suspect a pixel-stride or chunk-header validation we haven't decoded yet. The new `Diagnostic · Quadrants` preset is the next data point — Mario's report will tell us which axis is broken.
+- **Horizontal noise lines** on some animations. Reported by Mario after the chunk-header magic fix (0x064F → 0x0650) made the panel render full-screen. Cannot reproduce without a hardware screenshot of which preset shows the artefact and where on the panel — likely a chunk-boundary or row-stride issue but waiting on visual evidence before guessing.
 
 ### Deferred
 - **10 functional / live-stat TFT presets** (Battery, Volume, CPU, Memory, Clock, etc.) — needs a polling architecture + bitmap-font rasteriser to render text onto the panel. Tracked as Phase 5e in HANDOFF.

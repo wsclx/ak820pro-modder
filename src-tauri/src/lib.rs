@@ -22,11 +22,13 @@ mod icloud_sync;
 mod now_playing;
 mod presets;
 mod starter_library;
+mod tft_memory;
 use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
 use presets::Preset;
 use starter_library::StarterAutomation;
 use std::sync::Arc;
+use tft_memory::TftMemory;
 
 /// HID codes F13..F24 reserved as global-shortcut markers for automations.
 /// Inclusive range — gives the user 12 keyboard-triggerable automations.
@@ -304,14 +306,20 @@ async fn get_game_mode(state: State<'_, Arc<ConnState>>) -> Result<GameMode, App
 }
 
 #[tauri::command]
-async fn set_game_mode(state: State<'_, Arc<ConnState>>, mode: GameMode) -> Result<(), AppError> {
+async fn set_game_mode(
+    state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
+    mode: GameMode,
+) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
             conn.set_game_mode(&mode)?;
             Ok(())
         })
-        .await
+        .await?;
+    restore_tft_quietly(memory.inner().clone()).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -363,25 +371,37 @@ async fn get_default_fn_keymap(state: State<'_, Arc<ConnState>>) -> Result<Keyma
 }
 
 #[tauri::command]
-async fn set_keymap(state: State<'_, Arc<ConnState>>, keymap: Keymap) -> Result<(), AppError> {
+async fn set_keymap(
+    state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
+    keymap: Keymap,
+) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
             conn.set_keymap(&keymap)?;
             Ok(())
         })
-        .await
+        .await?;
+    restore_tft_quietly(memory.inner().clone()).await;
+    Ok(())
 }
 
 #[tauri::command]
-async fn set_fn_keymap(state: State<'_, Arc<ConnState>>, keymap: Keymap) -> Result<(), AppError> {
+async fn set_fn_keymap(
+    state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
+    keymap: Keymap,
+) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
             conn.set_fn_keymap(&keymap)?;
             Ok(())
         })
-        .await
+        .await?;
+    restore_tft_quietly(memory.inner().clone()).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -395,14 +415,20 @@ async fn get_macros(state: State<'_, Arc<ConnState>>) -> Result<Vec<Macro>, AppE
 }
 
 #[tauri::command]
-async fn set_macros(state: State<'_, Arc<ConnState>>, macros: Vec<Macro>) -> Result<(), AppError> {
+async fn set_macros(
+    state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
+    macros: Vec<Macro>,
+) -> Result<(), AppError> {
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
             conn.set_macros(&macros)?;
             Ok(())
         })
-        .await
+        .await?;
+    restore_tft_quietly(memory.inner().clone()).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -418,6 +444,7 @@ async fn get_custom_led(state: State<'_, Arc<ConnState>>) -> Result<CustomLedMap
 #[tauri::command]
 async fn set_custom_led(
     state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
     map: CustomLedMap,
 ) -> Result<(), AppError> {
     state
@@ -426,7 +453,9 @@ async fn set_custom_led(
             conn.set_custom_led(&map)?;
             Ok(())
         })
-        .await
+        .await?;
+    restore_tft_quietly(memory.inner().clone()).await;
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -634,6 +663,7 @@ pub struct ApplyPresetReport {
 async fn apply_preset(
     app: AppHandle,
     state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
     id: String,
     options: ApplyPresetOptions,
 ) -> Result<ApplyPresetReport, AppError> {
@@ -748,6 +778,11 @@ async fn apply_preset(
         }
     }
 
+    // Cross-cutting presets potentially touch lighting + keymap +
+    // macros, any of which the firmware may treat as TFT-resetting.
+    // The restore is cheap when memory is empty.
+    restore_tft_quietly(memory.inner().clone()).await;
+
     Ok(report)
 }
 
@@ -781,6 +816,7 @@ async fn force_reconnect(state: State<'_, Arc<ConnState>>) -> Result<(), AppErro
 #[tauri::command]
 async fn apply_lighting(
     state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
     config: LightingConfig,
 ) -> Result<(), AppError> {
     // Stale-handle retry is now handled generically by `ConnState::with`.
@@ -790,7 +826,23 @@ async fn apply_lighting(
             conn.set_lighting(&config)?;
             Ok(())
         })
-        .await
+        .await?;
+    // SET_LED_EFFECT is observed (and confirmed against the AJAZZ web
+    // driver) to reset the TFT to its factory animation. Re-apply what
+    // the user last asked the TFT to show.
+    restore_tft_quietly(memory.inner().clone()).await;
+    Ok(())
+}
+
+/// Re-apply the last user-requested TFT content if any. Free no-op when
+/// the memory is empty (which is the common case for users who never
+/// touch the TFT). Errors are downgraded to a warn-level log because
+/// the caller's primary command already succeeded — surfacing a TFT
+/// restore failure as a hard error would mis-attribute the blame.
+async fn restore_tft_quietly(memory: Arc<TftMemory>) {
+    if let Err(e) = memory.restore_after_side_effect().await {
+        tracing::warn!("TFT restore after side-effecting command failed: {e:?}");
+    }
 }
 
 fn direction_name(d: &Direction) -> &'static str {
@@ -952,15 +1004,21 @@ fn list_tft_presets() -> Vec<TftPresetInfo> {
 /// surfaces this as a single button. Implementation-wise: ask the
 /// device to show built-in animation index 0 — that's the boot-time
 /// default on every AK820 Pro firmware we've seen.
+///
+/// Also clears the TFT memory — the user has explicitly asked for the
+/// default, so we don't want a later Lighting change to drag whatever
+/// they had before back onto the panel.
 #[tauri::command]
-async fn tft_factory_default() -> Result<(), AppError> {
+async fn tft_factory_default(memory: State<'_, Arc<TftMemory>>) -> Result<(), AppError> {
     tokio::task::spawn_blocking(|| -> Result<(), AppError> {
         let tft = Connection::open_tft().map_err(AppError::from)?;
         tft.set_tft_built_in_index(0).map_err(AppError::from)?;
         Ok(())
     })
     .await
-    .map_err(|e| AppError::Protocol(format!("join factory default: {e}")))?
+    .map_err(|e| AppError::Protocol(format!("join factory default: {e}")))??;
+    memory.forget().await;
+    Ok(())
 }
 
 /// Upload a user-supplied image (PNG, JPEG, or GIF) to the TFT.
@@ -970,13 +1028,21 @@ async fn tft_factory_default() -> Result<(), AppError> {
 /// synchronous and we don't want to park a tokio worker on disk I/O
 /// or 128 × 128 RGB565 quantisation for a multi-frame GIF.
 #[tauri::command]
-async fn apply_tft_image(path: String, fit: String) -> Result<(), AppError> {
+async fn apply_tft_image(
+    memory: State<'_, Arc<TftMemory>>,
+    path: String,
+    fit: String,
+) -> Result<(), AppError> {
     let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
         .await
         .map_err(|e| AppError::Protocol(format!("join read: {e}")))?
         .map_err(|e| AppError::Protocol(format!("read image: {e}")))?;
 
     let fit_mode = FitMode::parse_lenient(&fit);
+    // Keep a copy for the memory layer — animation_from_bytes consumes
+    // the slice but we want to re-decode after side-effecting commands
+    // without going back to disk.
+    let bytes_for_memory = bytes.clone();
     let anim =
         tokio::task::spawn_blocking(move || tft_image::animation_from_bytes(&bytes, fit_mode))
             .await
@@ -990,11 +1056,15 @@ async fn apply_tft_image(path: String, fit: String) -> Result<(), AppError> {
     })
     .await
     .map_err(|e| AppError::Protocol(format!("join upload: {e}")))??;
+    memory.remember_image(bytes_for_memory, fit_mode).await;
     Ok(())
 }
 
 #[tauri::command]
-async fn apply_tft_preset(id: String) -> Result<(), AppError> {
+async fn apply_tft_preset(
+    memory: State<'_, Arc<TftMemory>>,
+    id: String,
+) -> Result<(), AppError> {
     // Build the animation off-thread — pixel generation for the busier
     // presets (scanline, checkerboard) does a ~half-megabyte of allocation
     // and we don't want to block the tokio worker on that.
@@ -1014,6 +1084,16 @@ async fn apply_tft_preset(id: String) -> Result<(), AppError> {
     })
     .await
     .map_err(|e| AppError::Protocol(format!("join upload: {e}")))??;
+    memory.remember_preset(id).await;
+    Ok(())
+}
+
+/// Explicit user-facing "forget what TFT content was last applied".
+/// Use this when the user has bound the TFT to live system info (Phase
+/// 5e) and doesn't want a stale preset re-uploaded under their feet.
+#[tauri::command]
+async fn tft_forget_memory(memory: State<'_, Arc<TftMemory>>) -> Result<(), AppError> {
+    memory.forget().await;
     Ok(())
 }
 
@@ -1028,6 +1108,7 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .manage(Arc::new(ConnState::default()))
+        .manage(Arc::new(TftMemory::default()))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init());
 
@@ -1082,6 +1163,7 @@ pub fn run() {
             apply_tft_preset,
             apply_tft_image,
             tft_factory_default,
+            tft_forget_memory,
         ])
         .setup(|app| {
             use tauri::Manager;
