@@ -36,6 +36,11 @@ thiserror = { workspace = true }
 # pacing inside that loop. `macros` so we can keep using #[tauri::command]
 # attrs that depend on tokio's spawn.
 tokio = { version = "1", features = ["sync", "rt-multi-thread", "time", "macros"] }
+# Bitmap-font text rendering for the Now-Playing TFT preset (Phase 5e
+# part 1). `embedded-graphics` ships a handful of MonoFonts and a
+# `DrawTarget` trait we implement on a tiny 128×128 RGB565 framebuffer.
+# Pure-Rust, no_std-friendly, ~30 KB compiled.
+embedded-graphics = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # Audio-reactive lighting (Phase 6 part 1b). `capture` pulls in

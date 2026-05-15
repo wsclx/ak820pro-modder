@@ -51,6 +51,7 @@ export function Tft() {
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [fit, setFit] = useState<FitMode>("fill");
+  const [nowPlayingRunning, setNowPlayingRunning] = useState(false);
 
   useEffect(() => {
     invoke<TftPresetInfo[]>("list_tft_presets")
@@ -59,7 +60,48 @@ export function Tft() {
         if (list.length > 0) setSelected(list[0].id);
       })
       .catch((e) => setErr(formatError(e)));
+    invoke<boolean>("now_playing_tft_status")
+      .then(setNowPlayingRunning)
+      .catch(() => {
+        /* not fatal — status defaults to false */
+      });
   }, []);
+
+  // Periodically refresh the Now-Playing running state so a manual stop
+  // from somewhere else (or a task self-exit on capture error) is
+  // reflected in the toggle. 5 s is fast enough for "did my toggle
+  // stick?" without being chatty.
+  useEffect(() => {
+    const id = setInterval(() => {
+      invoke<boolean>("now_playing_tft_status")
+        .then(setNowPlayingRunning)
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function toggleNowPlaying() {
+    setBusy(true);
+    setErr(null);
+    setInfo(null);
+    try {
+      if (nowPlayingRunning) {
+        await invoke("now_playing_tft_stop");
+        setNowPlayingRunning(false);
+        setInfo("Now-Playing on TFT stopped.");
+      } else {
+        await invoke("now_playing_tft_start");
+        setNowPlayingRunning(true);
+        setInfo(
+          "Now-Playing on TFT started. The panel will refresh every 2 s with the current Music.app / Spotify track.",
+        );
+      }
+    } catch (e) {
+      setErr(formatError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function applyPreset() {
     if (!selected) return;
@@ -150,6 +192,40 @@ export function Tft() {
       <ErrorBanner>{err}</ErrorBanner>
 
       <div className="grid gap-6">
+        <Card
+          title={
+            <span className="inline-flex items-center gap-2">
+              <span>Now Playing</span>
+              <Badge tone="neutral">Beta</Badge>
+              {nowPlayingRunning && <Badge tone="good">Streaming</Badge>}
+            </span>
+          }
+        >
+          <p className="text-sm text-fg-2">
+            Bind the TFT panel to your current track. Polls Music.app and
+            Spotify desktop every 2 seconds; shows title, artist, album, and
+            source. macOS only. Track changes propagate within ~2 s; the
+            panel says <em>Nothing playing</em> when nothing is.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <Button
+              variant={nowPlayingRunning ? "ghost" : "primary"}
+              onClick={() => void toggleNowPlaying()}
+              disabled={busy}
+            >
+              {busy
+                ? "Working…"
+                : nowPlayingRunning
+                  ? "Stop Now-Playing"
+                  : "Start Now-Playing on TFT"}
+            </Button>
+            <span className="text-xs text-fg-3">
+              Starts a host-side polling loop; stop to free the panel for a
+              static preset or upload.
+            </span>
+          </div>
+        </Card>
+
         <Card
           title={
             <span className="inline-flex items-center gap-2">

@@ -20,11 +20,14 @@ mod audio_reactive;
 mod automations;
 mod icloud_sync;
 mod now_playing;
+mod now_playing_tft;
 mod presets;
 mod starter_library;
 mod tft_memory;
+mod tft_text;
 use automations::{Automation, RunResult};
 use now_playing::NowPlaying;
+use now_playing_tft::NowPlayingTftState;
 use presets::Preset;
 use starter_library::StarterAutomation;
 use std::sync::Arc;
@@ -1097,6 +1100,40 @@ async fn tft_forget_memory(memory: State<'_, Arc<TftMemory>>) -> Result<(), AppE
     Ok(())
 }
 
+/* --------------------------------------------- Now-Playing TFT (Phase 5e) --
+ *
+ * Three commands the TFT view uses to bind the panel to live Now-Playing
+ * info. On macOS this means Music.app + Spotify desktop via osascript;
+ * on other platforms `now_playing::fetch` returns None and the panel
+ * shows "Nothing playing" indefinitely (the start/stop commands still
+ * work cross-platform so the UI doesn't need conditional imports).
+ */
+
+#[tauri::command]
+async fn now_playing_tft_start(
+    state: State<'_, Arc<NowPlayingTftState>>,
+    memory: State<'_, Arc<TftMemory>>,
+) -> Result<(), AppError> {
+    let state = state.inner().clone();
+    let memory = memory.inner().clone();
+    state.start(memory).await
+}
+
+#[tauri::command]
+async fn now_playing_tft_stop(
+    state: State<'_, Arc<NowPlayingTftState>>,
+) -> Result<(), AppError> {
+    state.stop().await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn now_playing_tft_status(
+    state: State<'_, Arc<NowPlayingTftState>>,
+) -> Result<bool, AppError> {
+    Ok(state.is_running().await)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
@@ -1109,6 +1146,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .manage(Arc::new(ConnState::default()))
         .manage(Arc::new(TftMemory::default()))
+        .manage(Arc::new(NowPlayingTftState::default()))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init());
 
@@ -1164,6 +1202,9 @@ pub fn run() {
             apply_tft_image,
             tft_factory_default,
             tft_forget_memory,
+            now_playing_tft_start,
+            now_playing_tft_stop,
+            now_playing_tft_status,
         ])
         .setup(|app| {
             use tauri::Manager;
