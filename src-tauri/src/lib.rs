@@ -1,9 +1,11 @@
 use ak820_protocol::{
+    commands::clock::TftDateTime,
     commands::keymap::Keymap,
     commands::lighting::{Direction, LightingConfig, Mode},
     commands::macros::{Macro, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO},
     commands::per_key_rgb::CustomLedMap,
     commands::system::{DeviceInfoReport, GameMode, SleepPreset, SLEEP_PRESETS},
+    commands::tft::{TftAnimation, TftUploadReport},
     commands::tft_image::{self, FitMode},
     commands::tft_presets::{self, TftPresetInfo},
     device::ProbeReport,
@@ -23,6 +25,7 @@ mod now_playing;
 mod now_playing_tft;
 mod presets;
 mod starter_library;
+mod tft_io;
 mod tft_memory;
 mod tft_text;
 use automations::{Automation, RunResult};
@@ -231,29 +234,25 @@ fn list_devices() -> Result<Vec<DeviceInfo>, AppError> {
 /// Read-only liveness probe. Crucially does NOT touch the cached HID handle
 /// in `ConnState` — enumeration is cheap, and locking the mutex from a polling
 /// loop would block view-level operations (lighting set / system reads).
+/// Uses the same endpoint selection as `Connection::open_control`, so
+/// "connected" always refers to the interface the next command will open.
 #[tauri::command]
 fn probe_device() -> Result<ProbeReport, AppError> {
-    const CONTROL_USAGE_PAGE: u16 = 0xFF68;
     let candidates = ak820_protocol::enumerate()?;
-    Ok(
-        match candidates
-            .iter()
-            .find(|d| d.usage_page == CONTROL_USAGE_PAGE)
-        {
-            Some(d) => ProbeReport {
-                connected: true,
-                interface: d.interface,
-                product: d.product.clone(),
-                firmware_version: None,
-            },
-            None => ProbeReport {
-                connected: false,
-                interface: -1,
-                product: None,
-                firmware_version: None,
-            },
+    Ok(match ak820_protocol::select_control(&candidates) {
+        Some(d) => ProbeReport {
+            connected: true,
+            interface: d.interface,
+            product: d.product.clone(),
+            firmware_version: None,
         },
-    )
+        None => ProbeReport {
+            connected: false,
+            interface: -1,
+            product: None,
+            firmware_version: None,
+        },
+    })
 }
 
 #[tauri::command]
@@ -321,7 +320,7 @@ async fn set_game_mode(
             Ok(())
         })
         .await?;
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
     Ok(())
 }
 
@@ -386,7 +385,7 @@ async fn set_keymap(
             Ok(())
         })
         .await?;
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
     Ok(())
 }
 
@@ -403,7 +402,7 @@ async fn set_fn_keymap(
             Ok(())
         })
         .await?;
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
     Ok(())
 }
 
@@ -430,7 +429,7 @@ async fn set_macros(
             Ok(())
         })
         .await?;
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
     Ok(())
 }
 
@@ -457,7 +456,7 @@ async fn set_custom_led(
             Ok(())
         })
         .await?;
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
     Ok(())
 }
 
@@ -784,7 +783,7 @@ async fn apply_preset(
     // Cross-cutting presets potentially touch lighting + keymap +
     // macros, any of which the firmware may treat as TFT-resetting.
     // The restore is cheap when memory is empty.
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
 
     Ok(report)
 }
@@ -833,19 +832,17 @@ async fn apply_lighting(
     // SET_LED_EFFECT is observed (and confirmed against the AJAZZ web
     // driver) to reset the TFT to its factory animation. Re-apply what
     // the user last asked the TFT to show.
-    restore_tft_quietly(memory.inner().clone()).await;
+    restore_tft_quietly(memory.inner());
     Ok(())
 }
 
-/// Re-apply the last user-requested TFT content if any. Free no-op when
-/// the memory is empty (which is the common case for users who never
-/// touch the TFT). Errors are downgraded to a warn-level log because
-/// the caller's primary command already succeeded — surfacing a TFT
-/// restore failure as a hard error would mis-attribute the blame.
-async fn restore_tft_quietly(memory: Arc<TftMemory>) {
-    if let Err(e) = memory.restore_after_side_effect().await {
-        tracing::warn!("TFT restore after side-effecting command failed: {e:?}");
-    }
+/// Schedule a re-apply of the last user-requested TFT content. Free no-op
+/// when the memory is empty (the common case for users who never touch
+/// the TFT). Debounced and fire-and-forget: the caller's command returns
+/// right away and a burst of commands costs one upload. See
+/// `tft_memory.rs`.
+fn restore_tft_quietly(memory: &Arc<TftMemory>) {
+    memory.schedule_restore();
 }
 
 fn direction_name(d: &Direction) -> &'static str {
@@ -984,111 +981,113 @@ async fn icloud_sync_pull(app: AppHandle) -> Result<Option<u64>, AppError> {
 
 /* ------------------------------------------------- TFT presets (Phase 5c) --
  *
- * Two commands the TFT view uses:
+ * Commands the TFT view uses:
  *   list_tft_presets    - returns the static catalogue (id, name, desc,
  *                         frame count, total ms). No device touched.
- *   apply_tft_preset    - builds the named animation, opens the 0xFF67 HID
- *                         interface, and uploads via the chunked-write path.
- *                         Drops the dedicated TFT handle on return — TFT
- *                         transfers are one-shot, no need to cache.
+ *   apply_tft_preset    - builds the named animation and uploads it.
+ *   apply_tft_image     - decodes a PNG / JPEG / GIF and uploads it.
+ *   tft_factory_default - back to the firmware's built-in animation.
+ *   tft_sync_clock      - set the RTC behind the stock clock page.
  *
- * The dedicated TFT interface is *not* the same handle as the `ConnState`
- * control connection (0xFF68). Both can be open concurrently. We open +
- * close per upload because TFT writes are infrequent compared to lighting
- * / keymap interactions.
+ * Uploads go through `tft_io`, which serialises all TFT traffic and
+ * opens a dedicated handle on the 0xFF67 interface per upload; that
+ * handle is separate from the `ConnState` control connection (0xFF68).
  */
 
+/// Async because the first call builds every preset to measure it
+/// (~130 ms release); sync commands would run that on the main thread.
 #[tauri::command]
-fn list_tft_presets() -> Vec<TftPresetInfo> {
-    tft_presets::catalogue()
+async fn list_tft_presets() -> Result<Vec<TftPresetInfo>, AppError> {
+    tokio::task::spawn_blocking(tft_presets::catalogue)
+        .await
+        .map_err(|e| AppError::Protocol(format!("join presets: {e}")))
 }
 
-/// Restore the TFT to its firmware-default animation. The web driver
-/// surfaces this as a single button. Implementation-wise: ask the
-/// device to show built-in animation index 0 — that's the boot-time
-/// default on every AK820 Pro firmware we've seen.
+/// Restore the TFT to its firmware-default animation: built-in animation
+/// index 0 via `SET_TFT_BUILT_IN_INDEX` on the **control** interface,
+/// like the CLI's `tft select-index` (it used to go to the TFT interface,
+/// which drops control frames). Holds the TFT lock so it can't land in
+/// the middle of an upload.
 ///
-/// Also clears the TFT memory — the user has explicitly asked for the
-/// default, so we don't want a later Lighting change to drag whatever
-/// they had before back onto the panel.
+/// Also clears the TFT memory: the user has explicitly asked for the
+/// default, so a later Lighting change mustn't drag the old content back.
 #[tauri::command]
-async fn tft_factory_default(memory: State<'_, Arc<TftMemory>>) -> Result<(), AppError> {
-    tokio::task::spawn_blocking(|| -> Result<(), AppError> {
-        let tft = Connection::open_tft().map_err(AppError::from)?;
-        tft.set_tft_built_in_index(0).map_err(AppError::from)?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Protocol(format!("join factory default: {e}")))??;
+async fn tft_factory_default(
+    state: State<'_, Arc<ConnState>>,
+    memory: State<'_, Arc<TftMemory>>,
+) -> Result<(), AppError> {
     memory.forget().await;
-    Ok(())
+    let _tft = tft_io::lock().await;
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_tft_built_in_index(0)?;
+            Ok(())
+        })
+        .await
+}
+
+/// Set the keyboard's RTC (shown on the stock TFT clock page) to the
+/// host's local time.
+#[tauri::command]
+async fn tft_sync_clock(state: State<'_, Arc<ConnState>>) -> Result<TftDateTime, AppError> {
+    let now = TftDateTime::now_local()?;
+    let _tft = tft_io::lock().await;
+    state
+        .with(|slot| {
+            let conn = ensure_open(slot)?;
+            conn.set_tft_datetime(&now)?;
+            Ok(())
+        })
+        .await?;
+    Ok(now)
 }
 
 /// Upload a user-supplied image (PNG, JPEG, or GIF) to the TFT.
-/// `fit` is one of `"fill"` / `"contain"` / `"stretch"`. Reads the file
-/// off-thread, decodes + resizes + quantises off-thread, and uploads
-/// off-thread — three separate `spawn_blocking` because each stage is
-/// synchronous and we don't want to park a tokio worker on disk I/O
-/// or 128 × 128 RGB565 quantisation for a multi-frame GIF.
+/// `fit` is one of `"fill"` / `"contain"` / `"stretch"`. File read and
+/// decode run on the blocking pool; a multi-frame GIF resize is real work.
 #[tauri::command]
 async fn apply_tft_image(
     memory: State<'_, Arc<TftMemory>>,
     path: String,
     fit: String,
-) -> Result<(), AppError> {
-    let bytes = tokio::task::spawn_blocking(move || std::fs::read(&path))
-        .await
-        .map_err(|e| AppError::Protocol(format!("join read: {e}")))?
-        .map_err(|e| AppError::Protocol(format!("read image: {e}")))?;
-
+) -> Result<TftUploadReport, AppError> {
     let fit_mode = FitMode::parse_lenient(&fit);
-    // Keep a copy for the memory layer — animation_from_bytes consumes
-    // the slice but we want to re-decode after side-effecting commands
-    // without going back to disk.
-    let bytes_for_memory = bytes.clone();
-    let anim =
-        tokio::task::spawn_blocking(move || tft_image::animation_from_bytes(&bytes, fit_mode))
-            .await
-            .map_err(|e| AppError::Protocol(format!("join decode: {e}")))?
-            .map_err(AppError::from)?;
-
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let tft = Connection::open_tft().map_err(AppError::from)?;
-        tft.upload_tft_animation(&anim).map_err(AppError::from)?;
-        Ok(())
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.clone());
+    let anim = tokio::task::spawn_blocking(move || -> Result<TftAnimation, AppError> {
+        let bytes =
+            std::fs::read(&path).map_err(|e| AppError::Protocol(format!("read image: {e}")))?;
+        Ok(tft_image::animation_from_bytes(&bytes, fit_mode)?)
     })
     .await
-    .map_err(|e| AppError::Protocol(format!("join upload: {e}")))??;
-    memory.remember_image(bytes_for_memory, fit_mode).await;
-    Ok(())
+    .map_err(|e| AppError::Protocol(format!("join decode: {e}")))??;
+
+    let anim = Arc::new(anim);
+    let report = tft_io::upload(anim.clone()).await?;
+    memory.remember(format!("image {name}"), anim).await;
+    Ok(report)
 }
 
 #[tauri::command]
 async fn apply_tft_preset(
     memory: State<'_, Arc<TftMemory>>,
     id: String,
-) -> Result<(), AppError> {
-    // Build the animation off-thread — pixel generation for the busier
-    // presets (scanline, checkerboard) does a ~half-megabyte of allocation
-    // and we don't want to block the tokio worker on that.
+) -> Result<TftUploadReport, AppError> {
+    // Build off-thread: the animated presets allocate and compute a few
+    // hundred KB of pixels.
     let id_for_build = id.clone();
     let anim = tokio::task::spawn_blocking(move || tft_presets::build(&id_for_build))
         .await
         .map_err(|e| AppError::Protocol(format!("join build: {e}")))?
         .ok_or_else(|| AppError::Protocol(format!("unknown TFT preset id: {id}")))?;
 
-    // Open the TFT HID interface, upload, drop. spawn_blocking again
-    // because hidapi I/O is synchronous and the chunked transfer can take
-    // tens of milliseconds for animated presets.
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let tft = Connection::open_tft().map_err(AppError::from)?;
-        tft.upload_tft_animation(&anim).map_err(AppError::from)?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Protocol(format!("join upload: {e}")))??;
-    memory.remember_preset(id).await;
-    Ok(())
+    let anim = Arc::new(anim);
+    let report = tft_io::upload(anim.clone()).await?;
+    memory.remember(format!("preset {id}"), anim).await;
+    Ok(report)
 }
 
 /// Explicit user-facing "forget what TFT content was last applied".
@@ -1120,9 +1119,7 @@ async fn now_playing_tft_start(
 }
 
 #[tauri::command]
-async fn now_playing_tft_stop(
-    state: State<'_, Arc<NowPlayingTftState>>,
-) -> Result<(), AppError> {
+async fn now_playing_tft_stop(state: State<'_, Arc<NowPlayingTftState>>) -> Result<(), AppError> {
     state.stop().await;
     Ok(())
 }
@@ -1202,6 +1199,7 @@ pub fn run() {
             apply_tft_image,
             tft_factory_default,
             tft_forget_memory,
+            tft_sync_clock,
             now_playing_tft_start,
             now_playing_tft_stop,
             now_playing_tft_status,

@@ -18,6 +18,7 @@ pub mod tft;
 pub mod tft_image;
 pub mod tft_presets;
 
+pub use clock::TftDateTime;
 pub use keymap::{KeyAction, Keymap, Page as KeyPage, KEYMAP_BYTES};
 pub use macros::{
     Macro, MacroAction, MacroActionKind, MACRO_BYTE_LIMIT, MACRO_SLOT_COUNT, MAX_ACTIONS_PER_MACRO,

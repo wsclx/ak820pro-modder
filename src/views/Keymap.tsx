@@ -208,7 +208,7 @@ export function Keymap() {
       setDraft(defaults);
       setSelectedSlot(null);
     } catch (e) {
-      setErr(`Couldn't read factory defaults: ${e}`);
+      setErr(`Couldn't read factory defaults: ${formatError(e)}`);
     } finally {
       setBusy(false);
     }
@@ -231,7 +231,7 @@ export function Keymap() {
         next.slots[slot] = { kind: "keyboard", usage: marker };
         setDraft(next);
       } catch (e) {
-        setErr(`Couldn't bind automation: ${e}`);
+        setErr(`Couldn't bind automation: ${formatError(e)}`);
       }
       return;
     }

@@ -14,10 +14,13 @@
  * 3. **Factory Default** — restore the firmware's boot-time animation
  *    (`SET_TFT_BUILT_IN_INDEX(0)`). Useful when an upload looks broken
  *    and you want the panel back to a known state.
+ * 4. **Clock sync** — set the keyboard RTC behind the stock clock page.
  *
- * The TFT upload runs against a different HID interface (0xFF67) than
- * the rest of the app, so an upload-in-flight doesn't contend with
- * Lighting / Keymap / Macros work on the control endpoint.
+ * Uploads run against a different HID interface (0xFF67) than the rest
+ * of the app and are serialised in the backend (`tft_io.rs`). Each
+ * upload returns a report saying whether the keyboard acknowledged the
+ * chunks or the backend fell back to pacing them, which is shown in the
+ * Status card for hardware testing.
  */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -35,6 +38,34 @@ interface TftPresetInfo {
 }
 
 type FitMode = "fill" | "contain" | "stretch";
+
+/** Mirrors `ak820_protocol::commands::tft::TftUploadReport`. */
+interface TftUploadReport {
+  chunks: number;
+  acknowledged: number;
+  paced_ms: number | null;
+  elapsed_ms: number;
+}
+
+/** Mirrors `ak820_protocol::commands::clock::TftDateTime`. */
+interface TftDateTime {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  weekday: number;
+}
+
+function uploadSummary(r: TftUploadReport): string {
+  const took = formatDuration(r.elapsed_ms);
+  return r.paced_ms === null
+    ? `${r.chunks} chunks, all acknowledged by the keyboard, ${took}.`
+    : `${r.chunks} chunks in ${took}; the keyboard acknowledged ${r.acknowledged}, the rest were paced at ${r.paced_ms} ms.`;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
 
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
@@ -109,12 +140,12 @@ export function Tft() {
     setErr(null);
     setInfo(null);
     try {
-      await invoke("apply_tft_preset", { id: selected });
+      const report = await invoke<TftUploadReport>("apply_tft_preset", { id: selected });
       const p = presets?.find((x) => x.id === selected);
       setInfo(
         p
-          ? `Uploaded ${p.display_name} (${p.frame_count} frame${p.frame_count === 1 ? "" : "s"}, ${formatDuration(p.total_ms)}). Watch the TFT.`
-          : "Uploaded. Watch the TFT.",
+          ? `Uploaded ${p.display_name} (${p.frame_count} frame${p.frame_count === 1 ? "" : "s"}, ${formatDuration(p.total_ms)}). ${uploadSummary(report)}`
+          : `Uploaded. ${uploadSummary(report)}`,
       );
     } catch (e) {
       setErr(formatError(e));
@@ -142,9 +173,9 @@ export function Tft() {
         // User cancelled.
         return;
       }
-      await invoke("apply_tft_image", { path, fit });
+      const report = await invoke<TftUploadReport>("apply_tft_image", { path, fit });
       const name = path.split("/").pop() ?? path;
-      setInfo(`Uploaded ${name} (fit: ${fit}). Watch the TFT.`);
+      setInfo(`Uploaded ${name} (fit: ${fit}). ${uploadSummary(report)}`);
     } catch (e) {
       setErr(formatError(e));
     } finally {
@@ -159,6 +190,22 @@ export function Tft() {
     try {
       await invoke("tft_factory_default");
       setInfo("Restored firmware-default animation.");
+    } catch (e) {
+      setErr(formatError(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function syncClock() {
+    setBusy(true);
+    setErr(null);
+    setInfo(null);
+    try {
+      const t = await invoke<TftDateTime>("tft_sync_clock");
+      setInfo(
+        `Keyboard clock set to ${t.year}-${pad2(t.month)}-${pad2(t.day)} ${pad2(t.hour)}:${pad2(t.minute)}:${pad2(t.second)}.`,
+      );
     } catch (e) {
       setErr(formatError(e));
     } finally {
@@ -332,15 +379,29 @@ export function Tft() {
           </Card>
         )}
 
-        <Card title="Next iteration">
+        <Card
+          title={
+            <span className="inline-flex items-center gap-2">
+              <span>Clock &amp; display page</span>
+              <Badge tone="neutral">Beta</Badge>
+            </span>
+          }
+        >
           <p className="text-sm text-fg-2">
-            Live system-info presets (battery percent, volume, CPU, clock,
-            etc.) need a polling + on-host text-rasterisation pipeline that
-            isn't built yet. Tracked as Phase 5e — see the project HANDOFF
-            for the scope and reasons. The current build ships the upload
-            path so contributors can hand-craft these images in any editor
-            and drop them in via <em>Custom image</em>.
+            The keyboard keeps its own clock for the stock clock page on the
+            TFT. <strong>Sync clock</strong> sets it to this Mac's local time.
           </p>
+          <p className="mt-2 text-sm text-fg-2">
+            Still seeing the stock animation or the clock after an upload? On
+            stock firmware, <strong>Fn + Delete</strong> (<strong>Fn + Entf</strong>{" "}
+            on German keycaps) switches the display page between the clock and
+            your animation.
+          </p>
+          <div className="mt-3">
+            <Button variant="ghost" onClick={() => void syncClock()} disabled={busy}>
+              {busy ? "Working…" : "Sync clock"}
+            </Button>
+          </div>
         </Card>
       </div>
     </>

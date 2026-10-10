@@ -1,8 +1,9 @@
+use ak820_protocol::commands::clock::TftDateTime;
 use ak820_protocol::commands::lighting::{
     led_effect_payload, parse_hex_rgb, Direction, LightingConfig, Mode, MAX_BRIGHTNESS, MAX_SPEED,
 };
 use ak820_protocol::commands::per_key_rgb::{CustomLedMap, LedColor, LED_COUNT};
-use ak820_protocol::commands::tft::{TftAnimation, TftFrame, PIXELS_PER_FRAME};
+use ak820_protocol::commands::tft::{TftAnimation, TftFrame, TftUploadReport, PIXELS_PER_FRAME};
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
@@ -76,6 +77,9 @@ enum TftCmd {
         #[arg(long)]
         index: u8,
     },
+    /// Set the keyboard's clock (shown on the stock TFT clock page) to the
+    /// host's local time.
+    SyncTime,
 }
 
 #[derive(Subcommand)]
@@ -194,6 +198,7 @@ fn main() -> Result<()> {
         Cmd::Tft(TftCmd::Solid { color }) => cmd_tft_solid(cli.json, &color),
         Cmd::Tft(TftCmd::Cycle { delay }) => cmd_tft_cycle(cli.json, delay),
         Cmd::Tft(TftCmd::SelectIndex { index }) => cmd_tft_select_index(cli.json, index),
+        Cmd::Tft(TftCmd::SyncTime) => cmd_tft_sync_time(cli.json),
         #[cfg(target_os = "macos")]
         Cmd::Audio(AudioCmd::Meter {
             duration,
@@ -247,11 +252,12 @@ fn cmd_list(json: bool) -> Result<()> {
     println!("Found {} interface(s):", devices.len());
     for d in devices {
         println!(
-            "  iface={} usage_page=0x{:04x} usage=0x{:04x}  pid=0x{:04x}  {}  {}",
+            "  iface={} usage_page=0x{:04x} usage=0x{:04x}  pid=0x{:04x} release=0x{:04x}  {}  {}",
             d.interface,
             d.usage_page,
             d.usage,
             d.pid,
+            d.release_number,
             d.product.as_deref().unwrap_or("?"),
             d.path,
         );
@@ -439,19 +445,48 @@ fn cmd_tft_solid(json: bool, color: &str) -> Result<()> {
         frames: vec![frame],
     };
     let tft = ak820_protocol::Connection::open_tft()?;
-    tft.upload_tft_animation(&anim)?;
+    let report = tft.upload_tft_animation(&anim)?;
     if json {
         println!(
             "{}",
-            serde_json::json!({"ok": true, "frames": 1, "color": format!("{:02X}{:02X}{:02X}", r, g, b)})
+            serde_json::json!({"ok": true, "frames": 1, "color": format!("{:02X}{:02X}{:02X}", r, g, b), "upload": report})
         );
     } else {
         println!(
             "TFT solid #{:02X}{:02X}{:02X} uploaded (1 frame, ~33 KB).",
             r, g, b
         );
-        println!("If the display still shows the default animation, run:");
-        println!("    ak820 tft select-index --index N   (try 0, then 1, …)");
+        print_tft_upload_report(&report);
+        println!("If the display still shows the stock animation, press Fn + Delete");
+        println!("on the keyboard to switch the display page.");
+    }
+    Ok(())
+}
+
+fn print_tft_upload_report(report: &TftUploadReport) {
+    match report.paced_ms {
+        None => println!(
+            "  {} chunks, all acknowledged, {} ms.",
+            report.chunks, report.elapsed_ms
+        ),
+        Some(pace) => println!(
+            "  {} chunks, {} acknowledged, then paced at {} ms/chunk, {} ms total.",
+            report.chunks, report.acknowledged, pace, report.elapsed_ms
+        ),
+    }
+}
+
+fn cmd_tft_sync_time(json: bool) -> Result<()> {
+    let now = TftDateTime::now_local()?;
+    let ctrl = ak820_protocol::Connection::open_control()?;
+    ctrl.set_tft_datetime(&now)?;
+    if json {
+        println!("{}", serde_json::json!({"ok": true, "datetime": now}));
+    } else {
+        println!(
+            "Keyboard clock set to {:04}-{:02}-{:02} {:02}:{:02}:{:02}.",
+            now.year, now.month, now.day, now.hour, now.minute, now.second
+        );
     }
     Ok(())
 }
@@ -486,14 +521,15 @@ fn cmd_tft_cycle(json: bool, delay_ms: u16) -> Result<()> {
     }
     let anim = TftAnimation { frames };
     let conn = ak820_protocol::Connection::open_tft()?;
-    conn.upload_tft_animation(&anim)?;
+    let report = conn.upload_tft_animation(&anim)?;
     if json {
         println!(
             "{}",
-            serde_json::json!({"ok": true, "frames": 6, "delay_ms": delay_ms})
+            serde_json::json!({"ok": true, "frames": 6, "delay_ms": delay_ms, "upload": report})
         );
     } else {
         println!("TFT 6-frame colour cycle uploaded (delay {} ms).", delay_ms);
+        print_tft_upload_report(&report);
     }
     Ok(())
 }

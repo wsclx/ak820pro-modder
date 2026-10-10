@@ -4,6 +4,8 @@ export interface DeviceInfo {
   interface: number;
   usage_page: number;
   usage: number;
+  /** USB bcdDevice, tracks the firmware revision (0x0107 = 1.07). */
+  release_number: number;
   manufacturer: string | null;
   product: string | null;
   serial: string | null;

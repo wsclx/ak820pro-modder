@@ -22,7 +22,6 @@
 //! current track.
 
 use ak820_protocol::commands::tft::{TftAnimation, TftFrame};
-use ak820_protocol::Connection;
 use embedded_graphics::{
     mono_font::{
         ascii::{FONT_5X8, FONT_6X10, FONT_8X13_BOLD},
@@ -39,6 +38,7 @@ use tokio::sync::{watch, Mutex};
 use tokio::task::JoinHandle;
 
 use crate::now_playing::{self, NowPlaying};
+use crate::tft_io;
 use crate::tft_memory::TftMemory;
 use crate::tft_text::{fit_glyphs, Framebuffer128};
 use crate::AppError;
@@ -154,19 +154,13 @@ async fn run_loop(mut stop_rx: watch::Receiver<bool>) {
     }
 }
 
-/// Encode + upload a single static frame (no animation). spawn_blocking
-/// because hidapi is synchronous and a 9-chunk transfer is ~30 ms.
+/// Upload a single static frame (no animation) through the shared TFT
+/// gateway, so a preset click can't interleave with a track change.
 async fn upload_single_frame(frame: TftFrame) -> Result<(), AppError> {
-    tokio::task::spawn_blocking(move || -> Result<(), AppError> {
-        let anim = TftAnimation {
-            frames: vec![frame],
-        };
-        let tft = Connection::open_tft().map_err(AppError::from)?;
-        tft.upload_tft_animation(&anim).map_err(AppError::from)?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| AppError::Protocol(format!("join now_playing upload: {e}")))?
+    let anim = TftAnimation {
+        frames: vec![frame],
+    };
+    tft_io::upload(Arc::new(anim)).await.map(|_| ())
 }
 
 /// Compose the 128×128 frame for the given Now-Playing snapshot.

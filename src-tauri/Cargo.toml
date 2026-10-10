@@ -13,18 +13,18 @@ name = "ak820pro_app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.0", features = [] }
+tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 ak820-protocol = { path = "../crates/ak820-protocol" }
-tauri = { version = "2.1", features = ["devtools"] }
-tauri-plugin-shell = "2.0"
-tauri-plugin-global-shortcut = "2.0"
+tauri = { version = "2.12", features = ["devtools"] }
+tauri-plugin-shell = "2.5"
+tauri-plugin-global-shortcut = "2.4"
 # Native file-open dialog for the TFT image upload (Phase 5d). Lets the
 # frontend get a real filesystem path the backend can `std::fs::read`,
 # avoiding the JSON-array-of-bytes IPC overhead of passing the file
 # buffer through the webview.
-tauri-plugin-dialog = "2.0"
+tauri-plugin-dialog = "2.8"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

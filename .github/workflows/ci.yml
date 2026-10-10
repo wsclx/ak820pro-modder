@@ -13,9 +13,9 @@ env:
 jobs:
   rust-test:
     name: Rust • test + clippy + fmt
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -37,13 +37,12 @@ jobs:
       # at compile time and verifies `frontendDist` actually exists. So we have
       # to build the frontend before clippy / test even though this is "the
       # Rust job" — otherwise compilation panics with "this path doesn't exist".
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      # pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Build frontend (populates dist/ for tauri::generate_context!)
@@ -62,17 +61,15 @@ jobs:
 
   frontend-build:
     name: Frontend • typecheck + build
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -81,10 +78,10 @@ jobs:
 
   tauri-bundle:
     name: Tauri • build .app
-    runs-on: macos-14
+    runs-on: macos-15
     needs: [rust-test, frontend-build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,13 +100,11 @@ jobs:
           cache-bin: false
           prefix-key: v1-rust
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       # Sanity-check the toolchain after every other action has finished
@@ -135,7 +130,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ""
 
       - name: Upload .app artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ak820pro-modder-macos-${{ github.sha }}
           # Cargo workspace puts build output under the *workspace-root*

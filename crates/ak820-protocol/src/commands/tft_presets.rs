@@ -19,6 +19,7 @@
 
 use super::tft::{TftAnimation, TftFrame, FRAME_BYTES, PIXELS_PER_FRAME, TFT_HEIGHT, TFT_WIDTH};
 use serde::Serialize;
+use std::sync::OnceLock;
 
 /// Lightweight catalogue entry. The frontend lists these in the TFT view's
 /// picker. The `frame_count` + `total_ms` fields are pre-computed so the
@@ -41,22 +42,31 @@ pub fn build(id: &str) -> Option<TftAnimation> {
 /// Metadata snapshot for every shipping preset. Hand-written so the list
 /// stays in roadmap-curation order (test colours first, then static
 /// gradients, then animations).
+///
+/// Frame count and duration come from actually building each animation
+/// (~130 ms release, ~500 ms debug for all twelve), so the result is
+/// computed once per process and cloned afterwards.
 pub fn catalogue() -> Vec<TftPresetInfo> {
-    ALL_PRESETS
-        .iter()
-        .map(|p| {
-            let anim = (p.build)();
-            let frame_count = anim.frames.len();
-            let total_ms: u32 = anim.frames.iter().map(|f| f.delay_ms as u32).sum();
-            TftPresetInfo {
-                id: p.id,
-                display_name: p.display_name,
-                description: p.description,
-                frame_count,
-                total_ms,
-            }
+    static CATALOGUE: OnceLock<Vec<TftPresetInfo>> = OnceLock::new();
+    CATALOGUE
+        .get_or_init(|| {
+            ALL_PRESETS
+                .iter()
+                .map(|p| {
+                    let anim = (p.build)();
+                    let frame_count = anim.frames.len();
+                    let total_ms: u32 = anim.frames.iter().map(|f| f.delay_ms as u32).sum();
+                    TftPresetInfo {
+                        id: p.id,
+                        display_name: p.display_name,
+                        description: p.description,
+                        frame_count,
+                        total_ms,
+                    }
+                })
+                .collect()
         })
-        .collect()
+        .clone()
 }
 
 struct PresetEntry {

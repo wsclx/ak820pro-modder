@@ -2,6 +2,7 @@ use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace};
 
+use crate::commands::clock::TftDateTime;
 use crate::commands::keymap::{Keymap, KEYMAP_BYTES};
 use crate::commands::lighting::{self, LightingConfig};
 use crate::commands::macros::{
@@ -9,7 +10,7 @@ use crate::commands::macros::{
 };
 use crate::commands::per_key_rgb::{CustomLedMap, CUSTOM_LED_BYTES};
 use crate::commands::system::{DeviceInfoReport, GameMode};
-use crate::commands::tft::{build_tft_header, TftAnimation};
+use crate::commands::tft::{build_tft_header, TftAnimation, TftUploadReport};
 use crate::protocol::{
     build_frame, cmd, HEADER_LEN, MAGIC_INCOMING, PACKET_LEN, PAYLOAD_PER_PACKET, REPORT_ID,
 };
@@ -25,10 +26,124 @@ pub struct DeviceInfo {
     pub interface: i32,
     pub usage_page: u16,
     pub usage: u16,
+    /// USB `bcdDevice`. On the AK820 Pro this tracks the firmware
+    /// revision (e.g. `0x0107` for 1.07, `0x0114` for 1.14), which lets
+    /// bug reports identify the firmware even when no control command
+    /// gets a response.
+    pub release_number: u16,
     pub manufacturer: Option<String>,
     pub product: Option<String>,
     pub serial: Option<String>,
     pub path: String,
+}
+
+/// Usage pages the official AJAZZ driver accepts for the control
+/// collection (`q(x)` in the web-driver source), in priority order. On
+/// the AK820 Pro that's interface 2 (`0xFF68`), not interface 3 (`0xFF67`).
+pub const CONTROL_USAGE_PAGES: &[u16] = &[0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B];
+
+/// Usage page of the feature-report interface that newer AK820 Pro
+/// revisions (e.g. ANSI boards on firmware 1.14) expose instead of the
+/// `0xFF67` TFT collection. Those boards don't answer the `0xAA`-framed
+/// protocol this crate speaks.
+const FEATURE_REPORT_USAGE_PAGE: u16 = 0xFF13;
+
+/// Usage page of the TFT upload collection on the boards we support.
+const TFT_USAGE_PAGE: u16 = 0xFF67;
+
+/// Pick the control endpoint from an enumeration. Selection precedence:
+///   1. `AK820_IFACE=N` → first device with `interface_number == N`
+///   2. `AK820_USAGE_PAGE=0xFFXX` → first device with that usage page
+///   3. the first usage page of [`CONTROL_USAGE_PAGES`] that any candidate
+///      exposes, then [`CONTROL_INTERFACE`] as a last resort
+///
+/// Rule 3 walks the priority list, not the enumeration order: macOS
+/// doesn't guarantee the order in which it reports a device's interfaces.
+pub fn select_control(candidates: &[DeviceInfo]) -> Option<&DeviceInfo> {
+    let by_iface_env = std::env::var("AK820_IFACE")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok());
+    let by_usage_env = std::env::var("AK820_USAGE_PAGE")
+        .ok()
+        .and_then(|v| u16::from_str_radix(v.trim_start_matches("0x"), 16).ok());
+
+    if let Some(want) = by_iface_env {
+        return candidates.iter().find(|d| d.interface == want);
+    }
+    if let Some(want) = by_usage_env {
+        return candidates.iter().find(|d| d.usage_page == want);
+    }
+    CONTROL_USAGE_PAGES
+        .iter()
+        .find_map(|page| candidates.iter().find(|d| d.usage_page == *page))
+        .or_else(|| candidates.iter().find(|d| d.interface == CONTROL_INTERFACE))
+}
+
+/// `true` when the enumeration looks like a board revision that speaks
+/// the feature-report protocol instead of ours: it exposes `0xFF13` but
+/// no `0xFF67` TFT collection.
+fn looks_like_feature_report_board(candidates: &[DeviceInfo]) -> bool {
+    candidates
+        .iter()
+        .any(|d| d.usage_page == FEATURE_REPORT_USAGE_PAGE)
+        && !candidates.iter().any(|d| d.usage_page == TFT_USAGE_PAGE)
+}
+
+/// Response commands accepted as a TFT chunk ack. The web driver's
+/// `setTftUserAnimation` expects cmd 65 (`SET_LED_USER_ANIMATION`); cmd 80
+/// is accepted too in case a firmware echoes the request command.
+const TFT_ACK_CMDS: [u8; 2] = [cmd::SET_LED_USER_ANIMATION, cmd::SET_TFT_USER_ANIMATION];
+
+/// How long the first chunk waits to find out whether acks arrive at all.
+/// The first chunk likely triggers the slowest flash erase, so this is
+/// generous; a firmware that never acks pays it once per upload.
+const TFT_ACK_PROBE_MS: i32 = 1000;
+
+/// Per-chunk ack timeout once acks are known to arrive. Generous because
+/// each 4096-byte chunk is likely one SPI-flash sector erase + program.
+const TFT_ACK_TIMEOUT_MS: i32 = 1500;
+
+/// Inter-chunk delay when the firmware doesn't ack.
+const TFT_DEFAULT_PACE_MS: i32 = 10;
+
+/// `AK820_TFT_PACE_MS` overrides the fallback pacing, so hardware tests
+/// can try different values without a rebuild.
+fn tft_pace_ms() -> i32 {
+    std::env::var("AK820_TFT_PACE_MS")
+        .ok()
+        .and_then(|v| v.parse::<i32>().ok())
+        .filter(|ms| *ms >= 0)
+        .unwrap_or(TFT_DEFAULT_PACE_MS)
+}
+
+/// Flow-control state of one TFT upload. The first chunk decides whether
+/// this firmware acks chunks; one missing ack later degrades to pacing so
+/// a silent firmware can't stall a 200-chunk GIF for minutes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TftFlow {
+    Probe,
+    Acked,
+    Paced,
+}
+
+impl TftFlow {
+    /// How long to wait for the ack of the chunk just written. When pacing,
+    /// the pace delay itself is spent listening, so a late ack still
+    /// counts and an early one lets the next chunk go out sooner.
+    fn ack_wait_ms(self, pace_ms: i32) -> i32 {
+        match self {
+            Self::Probe => TFT_ACK_PROBE_MS,
+            Self::Acked => TFT_ACK_TIMEOUT_MS,
+            Self::Paced => pace_ms,
+        }
+    }
+
+    fn next(self, acked: bool) -> Self {
+        match (self, acked) {
+            (Self::Probe | Self::Acked, true) => Self::Acked,
+            _ => Self::Paced,
+        }
+    }
 }
 
 /// Summary of one HID interface's report-descriptor properties.
@@ -159,6 +274,7 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
             interface: d.interface_number(),
             usage_page: d.usage_page(),
             usage: d.usage(),
+            release_number: d.release_number(),
             manufacturer: d.manufacturer_string().map(str::to_owned),
             product: d.product_string().map(str::to_owned),
             serial: d.serial_number().map(str::to_owned),
@@ -174,44 +290,23 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
 pub struct Connection {
     device: HidDevice,
     info: DeviceInfo,
+    /// Set when the enumeration matched [`looks_like_feature_report_board`].
+    /// Only used to turn a bare response timeout into an actionable error.
+    feature_report_board: bool,
 }
 
 impl Connection {
-    /// Open the AK820 control endpoint. Selection precedence:
-    ///   1. `AK820_IFACE=N` → first device with `interface_number == N`
-    ///   2. `AK820_USAGE_PAGE=0xFFXX` → first device with that usage page
-    ///   3. default: vendor-specific usage page `0xFF67`
+    /// Open the AK820 control endpoint. See [`select_control`] for the
+    /// selection rules.
     pub fn open_control() -> Result<Self> {
         let candidates = enumerate()?;
-
-        let by_iface_env = std::env::var("AK820_IFACE")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok());
-        let by_usage_env = std::env::var("AK820_USAGE_PAGE")
-            .ok()
-            .and_then(|v| u16::from_str_radix(v.trim_start_matches("0x"), 16).ok());
-
-        // The official AJAZZ online driver filters collections by usage page —
-        // `q(x)` in the source accepts [0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B].
-        // On the AK820 Pro that's interface 2 (0xFF68), not interface 3 (0xFF67).
-        const PREFERRED_USAGE_PAGES: &[u16] = &[0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B];
-
-        let pick = if let Some(want) = by_iface_env {
-            candidates.iter().find(|d| d.interface == want).cloned()
-        } else if let Some(want) = by_usage_env {
-            candidates.iter().find(|d| d.usage_page == want).cloned()
-        } else {
-            candidates
-                .iter()
-                .find(|d| PREFERRED_USAGE_PAGES.contains(&d.usage_page))
-                .or_else(|| candidates.iter().find(|d| d.interface == CONTROL_INTERFACE))
-                .cloned()
-        };
-
-        let control = pick.ok_or(Error::DeviceNotFound {
-            vid: VENDOR_ID,
-            interface: CONTROL_INTERFACE,
-        })?;
+        let control = select_control(&candidates)
+            .cloned()
+            .ok_or(Error::DeviceNotFound {
+                vid: VENDOR_ID,
+                interface: CONTROL_INTERFACE,
+            })?;
+        let feature_report_board = looks_like_feature_report_board(&candidates);
 
         let api = HidApi::new()?;
         let device = api.open_path(&std::ffi::CString::new(control.path.clone()).unwrap())?;
@@ -220,11 +315,14 @@ impl Connection {
             path = %control.path,
             interface = control.interface,
             usage_page = format!("0x{:04x}", control.usage_page),
+            release = format!("0x{:04x}", control.release_number),
+            feature_report_board,
             "opened control interface"
         );
         Ok(Self {
             device,
             info: control,
+            feature_report_board,
         })
     }
 
@@ -267,10 +365,7 @@ impl Connection {
                 .as_millis()
                 .min(i32::MAX as u128) as i32;
             if remaining_ms == 0 {
-                return Err(Error::UnexpectedResponse(format!(
-                    "timeout waiting for cmd 0x{:02x}",
-                    expected_cmd,
-                )));
+                return Err(self.timeout_error(expected_cmd));
             }
             let n = self.device.read_timeout(&mut buf, remaining_ms)?;
             if n == 0 {
@@ -286,6 +381,25 @@ impl Connection {
             }
             return Ok(buf[HEADER_LEN..n.min(PACKET_LEN)].to_vec());
         }
+    }
+
+    /// Build the error for a response that never arrived. Names the
+    /// interface we talked to, so a bug report alone shows whether the
+    /// wrong endpoint was picked, and flags board revisions that speak a
+    /// different protocol.
+    fn timeout_error(&self, expected_cmd: u8) -> Error {
+        let mut msg = format!(
+            "timeout waiting for cmd 0x{:02x} (interface {}, usage page 0x{:04x}, release 0x{:04x})",
+            expected_cmd, self.info.interface, self.info.usage_page, self.info.release_number,
+        );
+        if self.feature_report_board {
+            msg.push_str(
+                ". This keyboard exposes the 0xFF13 feature-report interface used by newer \
+                 AK820 Pro revisions (e.g. firmware 1.14), which speak a protocol this app \
+                 doesn't support yet",
+            );
+        }
+        Error::UnexpectedResponse(msg)
     }
 
     /// Run a single-chunk GET transaction: send request header, await response,
@@ -557,6 +671,15 @@ impl Connection {
         self.set(cmd::SET_TFT_BUILT_IN_INDEX, &[index])
     }
 
+    /// Set the keyboard's RTC, which the stock TFT clock page renders.
+    /// Web driver `setTftDateTime`: 10-byte payload via
+    /// `SET_TEMPORARY_COMMAND_DATA` (cmd 52) on the control interface.
+    pub fn set_tft_datetime(&self, datetime: &TftDateTime) -> Result<()> {
+        let payload = datetime.encode()?;
+        info!(?datetime, "SET_TFT_DATE_TIME");
+        self.set(cmd::SET_TEMPORARY_COMMAND_DATA, &payload)
+    }
+
     /// Open the **TFT upload** interface — a different HID endpoint than the
     /// one returned by `open_control()`. The TFT path uses 4096-byte payload
     /// chunks (vs 56-byte chunks elsewhere), so it has its own HID interface
@@ -572,7 +695,7 @@ impl Connection {
         let want_usage_page = std::env::var("AK820_TFT_USAGE_PAGE")
             .ok()
             .and_then(|v| u16::from_str_radix(v.trim_start_matches("0x"), 16).ok())
-            .unwrap_or(0xFF67);
+            .unwrap_or(TFT_USAGE_PAGE);
         let pick = candidates
             .iter()
             .find(|d| d.usage_page == want_usage_page)
@@ -590,7 +713,11 @@ impl Connection {
             usage_page = format!("0x{:04x}", pick.usage_page),
             "opened TFT upload interface"
         );
-        Ok(Self { device, info: pick })
+        Ok(Self {
+            device,
+            info: pick,
+            feature_report_board: false,
+        })
     }
 
     /// Upload a TFT animation as a single chunked transaction. Re-uses our
@@ -605,7 +732,17 @@ impl Connection {
     ///
     /// Must be called on a connection opened via `open_tft()` — the control
     /// interface's 64-byte report can't carry these chunks.
-    pub fn upload_tft_animation(&self, anim: &TftAnimation) -> Result<()> {
+    ///
+    /// **Flow control.** The web driver waits for a cmd-65 acknowledgement
+    /// after every chunk (HANDOFF § 6.9h); writing chunks back-to-back
+    /// while the firmware is still busy is the prime suspect for the
+    /// horizontal noise lines in #2. We don't know yet whether that ack
+    /// arrives on this HID handle, so the first chunk probes for it:
+    /// if it arrives, every chunk waits for its ack; if not (or if one goes
+    /// missing later), the remaining chunks are paced with a fixed delay
+    /// (`AK820_TFT_PACE_MS`, default 10 ms). The returned report says
+    /// which path the upload took.
+    pub fn upload_tft_animation(&self, anim: &TftAnimation) -> Result<TftUploadReport> {
         // Sanity-check the interface — if we're on the wrong one the
         // hidapi write will quietly fail with a frame-too-long error on macOS.
         if self.info.usage_page == 0xFF68 {
@@ -630,12 +767,16 @@ impl Connection {
             });
         }
 
+        let pace_ms = tft_pace_ms();
         info!(
             bytes = payload.len(),
             chunks = total_chunks,
             "SET_TFT_USER_ANIMATION upload"
         );
 
+        let started = std::time::Instant::now();
+        let mut flow = TftFlow::Probe;
+        let mut acknowledged = 0usize;
         // Pre-allocated per-chunk buffer: 1 report-id byte + 8 header + 4096 payload.
         let mut report = vec![0u8; 1 + TFT_REPORT_LEN];
         for i in 0..total_chunks {
@@ -645,18 +786,67 @@ impl Connection {
                 build_tft_header(cmd::SET_TFT_USER_ANIMATION, i as u16, total_chunks as u16);
 
             // Reset payload region to zero (header overwrites bytes 1..9).
-            for b in &mut report[1..] {
-                *b = 0;
-            }
+            report[1..].fill(0);
             report[0] = REPORT_ID;
             report[1..1 + HEADER_LEN].copy_from_slice(&header);
             let dst = &mut report[1 + HEADER_LEN..1 + HEADER_LEN + (end - start)];
             dst.copy_from_slice(&payload[start..end]);
 
-            trace!(chunk = i, total = total_chunks, "TFT TX");
+            trace!(chunk = i, total = total_chunks, ?flow, "TFT TX");
             self.device.write(&report)?;
+
+            let acked = self.wait_tft_ack(flow.ack_wait_ms(pace_ms));
+            if acked {
+                acknowledged += 1;
+            } else if flow != TftFlow::Paced {
+                debug!(chunk = i, pace_ms, "TFT chunk not acknowledged, pacing");
+            }
+            flow = flow.next(acked);
         }
-        Ok(())
+
+        let report = TftUploadReport {
+            chunks: total_chunks,
+            acknowledged,
+            paced_ms: (flow == TftFlow::Paced).then_some(pace_ms as u64),
+            elapsed_ms: started.elapsed().as_millis() as u64,
+        };
+        info!(?report, "SET_TFT_USER_ANIMATION done");
+        Ok(report)
+    }
+
+    /// Wait up to `timeout_ms` for the firmware's per-chunk TFT ack.
+    /// Read errors count as "no ack": they must never fail an upload that
+    /// would have succeeded fire-and-forget.
+    fn wait_tft_ack(&self, timeout_ms: i32) -> bool {
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms as u64);
+        let mut buf = [0u8; PACKET_LEN];
+        loop {
+            let remaining_ms = deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .as_millis()
+                .min(i32::MAX as u128) as i32;
+            if remaining_ms == 0 {
+                return false;
+            }
+            let n = match self.device.read_timeout(&mut buf, remaining_ms) {
+                Ok(n) => n,
+                Err(e) => {
+                    debug!(%e, "TFT ack read failed");
+                    return false;
+                }
+            };
+            if n >= 2 && buf[0] == MAGIC_INCOMING && TFT_ACK_CMDS.contains(&buf[1]) {
+                return true;
+            }
+            if n > 0 {
+                trace!(
+                    magic = buf[0],
+                    cmd = buf[1],
+                    "ignoring non-ack TFT input report"
+                );
+            }
+        }
     }
 
     /// Read the 128-LED per-key colour map.
@@ -705,4 +895,83 @@ pub struct ProbeReport {
     pub interface: i32,
     pub product: Option<String>,
     pub firmware_version: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn iface(interface: i32, usage_page: u16) -> DeviceInfo {
+        DeviceInfo {
+            vid: VENDOR_ID,
+            pid: 0x8009,
+            interface,
+            usage_page,
+            usage: 1,
+            release_number: 0x0107,
+            manufacturer: None,
+            product: None,
+            serial: None,
+            path: format!("iface{interface}-{usage_page:04x}"),
+        }
+    }
+
+    #[test]
+    fn select_control_follows_priority_not_enumeration_order() {
+        // 0xFF00 is enumerated first, but 0xFF68 ranks higher.
+        let candidates = [iface(0, 0xFF00), iface(3, 0xFF67), iface(2, 0xFF68)];
+        let pick = select_control(&candidates).expect("control endpoint");
+        assert_eq!(pick.usage_page, 0xFF68);
+        assert_eq!(pick.interface, 2);
+    }
+
+    #[test]
+    fn select_control_falls_back_to_control_interface() {
+        let candidates = [iface(1, 0x0001), iface(3, 0xFF67), iface(2, 0x000C)];
+        let pick = select_control(&candidates).expect("fallback endpoint");
+        assert_eq!(pick.interface, CONTROL_INTERFACE);
+    }
+
+    #[test]
+    fn select_control_returns_none_without_candidates() {
+        assert!(select_control(&[]).is_none());
+    }
+
+    #[test]
+    fn tft_flow_keeps_waiting_while_acks_arrive() {
+        let flow = TftFlow::Probe.next(true);
+        assert_eq!(flow, TftFlow::Acked);
+        assert_eq!(flow.next(true), TftFlow::Acked);
+        assert_eq!(flow.ack_wait_ms(10), TFT_ACK_TIMEOUT_MS);
+        assert_eq!(TftFlow::Probe.ack_wait_ms(10), TFT_ACK_PROBE_MS);
+    }
+
+    #[test]
+    fn tft_flow_paces_without_acks() {
+        // Silent firmware: decided after the first chunk.
+        assert_eq!(TftFlow::Probe.next(false), TftFlow::Paced);
+        // One missing ack later degrades instead of stalling every chunk.
+        assert_eq!(TftFlow::Acked.next(false), TftFlow::Paced);
+        // Pacing is final for the rest of the upload; the pace window is
+        // spent listening for late acks.
+        assert_eq!(TftFlow::Paced.next(true), TftFlow::Paced);
+        assert_eq!(TftFlow::Paced.ack_wait_ms(25), 25);
+    }
+
+    #[test]
+    fn feature_report_board_needs_ff13_without_ff67() {
+        assert!(looks_like_feature_report_board(&[
+            iface(2, 0xFF68),
+            iface(3, 0xFF13),
+        ]));
+        assert!(!looks_like_feature_report_board(&[
+            iface(2, 0xFF68),
+            iface(3, 0xFF67),
+        ]));
+        assert!(!looks_like_feature_report_board(&[
+            iface(2, 0xFF68),
+            iface(3, 0xFF13),
+            iface(4, 0xFF67),
+        ]));
+    }
 }

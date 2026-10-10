@@ -82,6 +82,22 @@ pub fn build_tft_header(cmd: u8, chunk_idx: u16, total_chunks: u16) -> [u8; 8] {
     ]
 }
 
+/// What happened during one chunked TFT upload. Surfaced to the UI and
+/// the CLI so a hardware test shows directly whether the firmware
+/// acknowledged the chunks or whether the uploader fell back to pacing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TftUploadReport {
+    /// Number of 4096-byte chunks written.
+    pub chunks: usize,
+    /// How many of them the firmware acknowledged (cmd 65).
+    pub acknowledged: usize,
+    /// Pace delay used once a chunk went unacknowledged (the delay is
+    /// spent listening for late acks); `None` when every chunk was acked.
+    pub paced_ms: Option<u64>,
+    /// Wall-clock duration of the whole upload.
+    pub elapsed_ms: u64,
+}
+
 /// One animation frame, in display-ready RGB565 LE pixels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TftFrame {
