@@ -179,6 +179,20 @@ the online driver.
 Each request gets one response; the last request has byte 6 = 1 (last-
 packet flag).
 
+`SET_CUSTOM_LED_DATA` (per-key RGB, 512 bytes → 10 chunks) is the
+exception, and it is **hardware-unverified — Mario must verify**.
+`set_custom_led` calls `set_many_at` in streaming mode: intermediate
+chunks do not wait for `read_response`, so a full 128-LED frame can
+exceed the old ~15 fps ceiling. The final chunk of every frame is still
+read. Every `LED_STREAM_SYNC_EVERY_N_FRAMES` frames (default 4; override
+with `Connection::set_led_stream_sync_every_n_frames` or
+`AK820_LED_SYNC_EVERY_N_FRAMES`) the host drains the HID input buffer.
+`LED_STREAM_INTER_CHUNK_DELAY` / `AK820_LED_CHUNK_DELAY_US` inserts an
+optional pause between those chunks (default 0). Read-expecting commands
+(`get`, `set`, `get_many`, keymap and macro writes) drain the input
+buffer *before* they write, so a leftover streaming ACK cannot be paired
+with the next request. Keymap and macro writes still ACK every chunk.
+
 ---
 
 ## 4. Repository Layout
@@ -316,7 +330,7 @@ ak820pro-modder/
 | 6a — Now-Playing reader | ✅ done | JXA probe of Music.app + Spotify desktop every 2 s, surfaced in System view | Phase-6 preview for the TFT pipeline |
 | 6b — Automations engine | ✅ done | AppleScript / Shortcut / Shell library with 15 curated starters, persistence to `$APP_DATA/automations.json`, run-with-output panel, keyboard-side triggers via F13–F24 markers (Carbon RegisterEventHotKey via `tauri-plugin-global-shortcut`) | up to 12 keyboard-bindable automations at once |
 | 6c — Cross-cutting presets | ✅ done | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle, additive apply with per-component opt-in | sparse keymap overrides + automation seeds resolved against starter library |
-| 6d — Audio-reactive lighting | 🧪 alpha | `crates/ak820-audio-reactive` — ScreenCaptureKit (`macos_13_0`) + `realfft` 3.5 → bass/mids/highs → 3-zone Spectrum preset on the per-key grid. Two-stage Alpha unlock in Lighting view (Locked/Unlocked + Streaming Off/On), `localStorage`-persisted. CLI smoke probe `ak820 audio meter`. | Real-music smoothness still flickery — wire-level cadence of `set_custom_led` (10 HID chunks per frame) saturates the firmware pipeline at ~15 fps. Frame deduplication kills the silence-flicker; faster-than-15-fps needs a protocol-layer change (skip per-chunk `read_response` in `set_many_at`). |
+| 6d — Audio-reactive lighting | 🧪 alpha | `crates/ak820-audio-reactive` — ScreenCaptureKit (`macos_13_0`) + `realfft` 3.5 → bass/mids/highs → 3-zone Spectrum preset on the per-key grid. Two-stage Alpha unlock in Lighting view (Locked/Unlocked + Streaming Off/On), `localStorage`-persisted. CLI smoke probe `ak820 audio meter`. Output target 30 fps. | Streaming `set_custom_led` skips per-chunk `read_response` (final chunk of each frame still ACKed; input buffer drained every `LED_STREAM_SYNC_EVERY_N_FRAMES`, default 4; optional `AK820_LED_CHUNK_DELAY_US`). Frame deduplication still drops unchanged frames. **Hardware-unverified — Mario must verify** smoothness above ~15 fps and that the next keymap / lighting / macro command still round-trips. FFT attack/release are still the 15 Hz coefficients, so 30 fps may feel twitchier. |
 | 6e — Now-playing on TFT | ⏳ pending | — | gated on Phase 5b activation sequence |
 | 6f — iCloud profile sync | 🧪 beta | `src-tauri/src/icloud_sync.rs` — thin transport: detect `$HOME/Library/Mobile Documents/com~apple~CloudDocs/`, push/pull `ak820pro-modder/automations.json` with last-write-wins by mtime. Tauri commands `icloud_sync_status/_push/_pull`. SyncCard in System view with toggle + manual buttons. App-mount auto-pull, save-hook auto-push. Hermetic unit tests inject the iCloud root so CI without iCloud still passes. | Per-record ID-based merge + custom-LED snapshots + settings sync are 0.7.x follow-ups. |
 
@@ -628,6 +642,52 @@ Host-side workaround (not implemented): use Karabiner-Elements to
 remap consumer HID 233/234/226 to F13/F14/F15, then bind those F
 keys in the Automations tab. That gives the user a "configurable
 knob" without the device cooperating.
+
+### 6.9j Streaming per-key RGB skips per-chunk ACKs (hardware-unverified)
+
+`SET_CUSTOM_LED_DATA` is 512 bytes → 10 HID output reports. Reading a
+response after every chunk capped a full-frame update at ~15 fps and
+the audio-reactive loop sat on that ceiling. `set_many_at(..., Streaming)`
+(used only by `set_custom_led`) now writes intermediate chunks without
+`read_response`.
+
+The firmware still emits an ACK per chunk. Leaving those unread will
+eventually fill the IN endpoint (the device stops consuming OUT reports
+— looks like a stuck frame) **and** will desynchronise the next
+request/response pair: `read_response` matches on command byte, so a
+stale `SET_CUSTOM_LED_DATA` ACK satisfies the final-chunk read of the
+*next* frame, and a stale `GET_CUSTOM_LED_DATA` ACK would be returned
+as the keymap-style payload. Two guards, both required:
+
+1. **Final chunk of every frame** still calls `read_response`. That is
+   the per-frame overrun hedge.
+2. **Every N frames** (`LED_STREAM_SYNC_EVERY_N_FRAMES`, default 4)
+   `drain_input` sweeps the buffer with a zero-timeout read. The same
+   drain runs at the start of every read-expecting command (`get`,
+   `set`, `get_many`, `get_many_at`, and the every-chunk `set_many_at`
+   used by keymap and macros). Do not remove it when "the tests still
+   pass" on a mock that never shares a buffer across calls.
+
+`N = 1` drains every frame. `N = 0` disables only the periodic drain.
+`AK820_LED_CHUNK_DELAY_US` (or `set_led_stream_inter_chunk_delay`) adds
+a sleep between streaming chunks when a board overruns its OUT buffer
+anyway. Both are read when the connection is opened; setters override
+them on a live handle (a reconnect via `ensure_open` picks the env up
+again).
+
+Mock-HID tests in `device.rs` pin the counts: a 10-chunk frame does 10
+writes and 1 blocking read; frame N of the sync interval also drains;
+`set_many_at(..., EveryChunk)` still reads once per chunk; a pre-seeded
+same-command response is dropped before `get_custom_led` decodes.
+
+**Mario must verify this on a real AK820 Pro.** Nothing here has been
+on hardware. Check (a) audio-reactive at 30 fps on busy music looks
+smoother than the old 15 fps path, (b) a keymap save, a lighting-mode
+change, and a macro write immediately after a streaming burst still
+round-trip, (c) if frames stall, try `AK820_LED_SYNC_EVERY_N_FRAMES=1`
+and a few hundred `AK820_LED_CHUNK_DELAY_US`. The analyzer's 0.4 / 0.2
+EMA was tuned at 15 Hz and is applied once per frame, so 30 fps may
+also feel twitchy — that is a separate knob from the HID cadence.
 
 ### 6.9 Keymap action-page enum `O` values (mismatch landmine)
 The official enum is:

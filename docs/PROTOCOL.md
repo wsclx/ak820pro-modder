@@ -96,12 +96,18 @@ offset | field
 | `SET_GAME_MODE` | 33 | |
 | `SET_KEY` | 34 | |
 | **`SET_LED_EFFECT`** | **35 (0x23)** | global lighting (write) |
-| `SET_CUSTOM_LED_DATA` | 36 | per-key RGB (write) |
+| `SET_CUSTOM_LED_DATA` | 36 | per-key RGB (write, 512 bytes). See streaming cadence below. |
 | `SET_MACRO` | 37 | |
 | `SET_FN_KEY` | 38 | |
 | `SET_LED_BOOT_ANIMATION` | 64 | |
 | `SET_TFT_USER_ANIMATION` | 80 | TFT frame upload |
 | `SET_TFT_BUILT_IN_INDEX` | 81 | select pre-installed TFT animation |
+
+### `SET_CUSTOM_LED_DATA` host cadence
+
+The wire format is unchanged (10 chunks of ≤56 bytes, last-packet flag on the final chunk). The host no longer waits for a response after every chunk of this write-only command — that round-trip capped a full 128-LED frame at ~15 fps. `Connection::set_custom_led` ACKs the **final chunk of each frame**, drains the HID input buffer every `LED_STREAM_SYNC_EVERY_N_FRAMES` frames (default 4), and can insert `LED_STREAM_INTER_CHUNK_DELAY` between chunks (default 0). Other multi-chunk writes (keymap, macros) still ACK every chunk. Read-expecting commands drain unread streaming ACKs before they write so a leftover reply cannot pair with the next request.
+
+**Hardware-unverified.** Mario must verify on a real AK820 Pro.
 
 ## `SET_LED_EFFECT` payload (16 bytes, official format)
 

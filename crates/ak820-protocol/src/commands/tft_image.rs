@@ -23,13 +23,14 @@ use image::{AnimationDecoder, GenericImageView, Rgba};
 use serde::{Deserialize, Serialize};
 
 /// How to fit an arbitrary-aspect source into the 128 × 128 target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum FitMode {
     /// Resize so the shorter side matches 128, crop the longer side
     /// equally on both ends to a 128 × 128 square. Picture goes
     /// edge-to-edge. **Default** — matches what the AJAZZ web tool does
     /// for stills.
+    #[default]
     Fill,
     /// Resize so the longer side matches 128, letterbox the shorter
     /// side with black bars. Preserves the entire image content.
@@ -37,12 +38,6 @@ pub enum FitMode {
     /// Stretch each axis to 128 independently. Distorts non-square
     /// sources; only useful when you already cropped to a square.
     Stretch,
-}
-
-impl Default for FitMode {
-    fn default() -> Self {
-        Self::Fill
-    }
 }
 
 impl FitMode {

@@ -29,14 +29,14 @@ pub const FFT_LEN: usize = 1024;
 
 /// Asymmetric EMA: bigger = faster rise / fall.
 ///
-/// Tuned for 15 Hz output rate (the AK820 Pro's HID throughput maxes out
-/// around 30 frames/s for a full 128-LED update, leaving 15 fps as the
-/// "comfortable" target — see `src-tauri/src/audio_reactive.rs::TARGET_FPS`).
-/// Higher numbers were too twitchy in practice: 0.6 attack means 60% of
-/// the gap closes per frame, which at 15 Hz reads as visible step-jumps
-/// rather than musical motion. 0.4 / 0.2 settles on ~3 frames to half-max,
-/// which keeps beats visible without the LEDs ever looking like they're
-/// snapping.
+/// Tuned for a 15 Hz output rate. The Tauri loop's `TARGET_FPS` is now 30
+/// because streaming `SET_CUSTOM_LED_DATA` skips the per-chunk ACK (see
+/// `src-tauri/src/audio_reactive.rs`). These alphas are still applied once
+/// per output frame, so at 30 Hz the same 0.4 / 0.2 close the gap about
+/// twice as fast in wall-clock time. That can read as twitchy.
+/// **Hardware-unverified** — Mario should say if attack/release need to
+/// come down with the frame rate. 0.6 attack was already too steppy at
+/// 15 Hz; 0.4 / 0.2 was the comfortable per-frame pair there.
 const ATTACK: f32 = 0.4;
 const RELEASE: f32 = 0.2;
 

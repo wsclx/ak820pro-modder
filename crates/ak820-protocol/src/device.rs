@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::Duration;
+
 use hidapi::{HidApi, HidDevice};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace};
@@ -17,6 +20,144 @@ use crate::{error::*, CONTROL_INTERFACE, PRODUCT_IDS, VENDOR_ID};
 
 /// Default response timeout (ms) for non-streaming GET/SET commands.
 const DEFAULT_TIMEOUT_MS: i32 = 500;
+
+/// How many streaming per-key RGB frames elapse between full input-buffer
+/// drains.
+///
+/// `set_custom_led` skips the per-chunk ACK so a 128-LED frame (10 HID
+/// reports) can finish fast enough to exceed ~15 fps. The host still reads
+/// the response of the **final chunk of every frame**. Every Nth frame it
+/// also drains whatever else is sitting in the HID input buffer, so unread
+/// intermediate ACKs cannot fill the firmware's IN endpoint or be mistaken
+/// for the next command's reply.
+///
+/// `1` drains after every frame. `0` disables the periodic drain (the
+/// final-chunk read still happens, and every read-expecting command drains
+/// before it writes).
+///
+/// Override per connection with
+/// [`Connection::set_led_stream_sync_every_n_frames`], or at open time with
+/// the `AK820_LED_SYNC_EVERY_N_FRAMES` environment variable.
+///
+/// **Hardware-unverified.** Mario must confirm on a real AK820 Pro that
+/// this cadence stays ahead of the firmware buffer.
+pub const LED_STREAM_SYNC_EVERY_N_FRAMES: u32 = 4;
+
+/// Optional pause between streaming LED chunks (not after the last chunk).
+///
+/// [`Duration::ZERO`] keeps a 128-LED frame write-bound. A few hundred
+/// microseconds is the escape hatch when a board overruns its OUT buffer
+/// even with the final-chunk ACK.
+///
+/// Override per connection with
+/// [`Connection::set_led_stream_inter_chunk_delay`], or at open time with
+/// `AK820_LED_CHUNK_DELAY_US` (integer microseconds).
+pub const LED_STREAM_INTER_CHUNK_DELAY: Duration = Duration::ZERO;
+
+/// Cap on a single input-buffer drain. One LED frame is 10 reports; 64
+/// covers several undrained frames without letting a wedged device spin.
+const DRAIN_MAX_REPORTS: usize = 64;
+
+/// HID byte pipe used by [`Connection`].
+///
+/// Production opens a `hidapi::HidDevice`. Tests supply a mock that records
+/// read and write calls so the streaming ACK policy can be checked without
+/// hardware.
+pub trait HidTransport {
+    fn write_report(&self, data: &[u8]) -> Result<usize>;
+    fn read_report_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> Result<usize>;
+}
+
+impl HidTransport for HidDevice {
+    fn write_report(&self, data: &[u8]) -> Result<usize> {
+        Ok(self.write(data)?)
+    }
+
+    fn read_report_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> Result<usize> {
+        Ok(self.read_timeout(buf, timeout_ms)?)
+    }
+}
+
+/// Whether a multi-chunk SET waits for a firmware response.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SetAckMode {
+    /// Read after every chunk. Keymap and macro writes use this — a dropped
+    /// chunk there corrupts persistent state, and the payloads are not a
+    /// realtime stream.
+    EveryChunk,
+    /// Write-only stream. Skip per-chunk reads; ACK the final chunk of the
+    /// frame, and drain the input buffer every N frames. Per-key RGB uses
+    /// this so a full 128-LED update can exceed ~15 fps.
+    Streaming,
+}
+
+/// Runtime knobs for [`SetAckMode::Streaming`]. Atomics because every
+/// protocol method takes `&self` (the Tauri shell shares one connection).
+struct LedStreamTuning {
+    sync_every_n_frames: AtomicU32,
+    inter_chunk_delay_us: AtomicU64,
+    /// Streaming frames observed on this connection. The first frame is 1.
+    frames_sent: AtomicU32,
+}
+
+impl LedStreamTuning {
+    #[cfg(test)]
+    fn from_defaults() -> Self {
+        Self {
+            sync_every_n_frames: AtomicU32::new(LED_STREAM_SYNC_EVERY_N_FRAMES),
+            inter_chunk_delay_us: AtomicU64::new(duration_as_micros(LED_STREAM_INTER_CHUNK_DELAY)),
+            frames_sent: AtomicU32::new(0),
+        }
+    }
+
+    fn from_env() -> Self {
+        let sync = parse_env_u32(
+            std::env::var("AK820_LED_SYNC_EVERY_N_FRAMES")
+                .ok()
+                .as_deref(),
+            LED_STREAM_SYNC_EVERY_N_FRAMES,
+        );
+        let delay_us = parse_env_u64(
+            std::env::var("AK820_LED_CHUNK_DELAY_US").ok().as_deref(),
+            duration_as_micros(LED_STREAM_INTER_CHUNK_DELAY),
+        );
+        Self {
+            sync_every_n_frames: AtomicU32::new(sync),
+            inter_chunk_delay_us: AtomicU64::new(delay_us),
+            frames_sent: AtomicU32::new(0),
+        }
+    }
+}
+
+fn duration_as_micros(delay: Duration) -> u64 {
+    u64::try_from(delay.as_micros()).unwrap_or(u64::MAX)
+}
+
+fn parse_env_u32(raw: Option<&str>, default: u32) -> u32 {
+    match raw {
+        Some(value) => match value.trim().parse::<u32>() {
+            Ok(parsed) => parsed,
+            Err(_) => {
+                tracing::warn!(value, default, "invalid AK820_LED_SYNC_EVERY_N_FRAMES");
+                default
+            }
+        },
+        None => default,
+    }
+}
+
+fn parse_env_u64(raw: Option<&str>, default: u64) -> u64 {
+    match raw {
+        Some(value) => match value.trim().parse::<u64>() {
+            Ok(parsed) => parsed,
+            Err(_) => {
+                tracing::warn!(value, default, "invalid AK820_LED_CHUNK_DELAY_US");
+                default
+            }
+        },
+        None => default,
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -171,12 +312,18 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
     Ok(found)
 }
 
-pub struct Connection {
-    device: HidDevice,
+pub struct Connection<D: HidTransport = HidDevice> {
+    device: D,
     info: DeviceInfo,
+    led_stream: LedStreamTuning,
 }
 
-impl Connection {
+impl Connection<HidDevice> {
+    /// Borrow the underlying hidapi handle.
+    pub fn raw(&self) -> &HidDevice {
+        &self.device
+    }
+
     /// Open the AK820 control endpoint. Selection precedence:
     ///   1. `AK820_IFACE=N` → first device with `interface_number == N`
     ///   2. `AK820_USAGE_PAGE=0xFFXX` → first device with that usage page
@@ -225,15 +372,51 @@ impl Connection {
         Ok(Self {
             device,
             info: control,
+            led_stream: LedStreamTuning::from_env(),
         })
     }
+}
 
+impl<D: HidTransport> Connection<D> {
     pub fn info(&self) -> &DeviceInfo {
         &self.info
     }
 
-    pub fn raw(&self) -> &HidDevice {
-        &self.device
+    /// How often a streaming per-key RGB frame drains the HID input buffer.
+    ///
+    /// See [`LED_STREAM_SYNC_EVERY_N_FRAMES`]. `0` disables the periodic
+    /// drain; the final chunk of each frame is still ACKed.
+    pub fn set_led_stream_sync_every_n_frames(&self, every_n_frames: u32) {
+        self.led_stream
+            .sync_every_n_frames
+            .store(every_n_frames, Ordering::Relaxed);
+    }
+
+    /// Pause inserted between streaming LED chunks. [`Duration::ZERO`]
+    /// (the default) does not sleep.
+    pub fn set_led_stream_inter_chunk_delay(&self, delay: Duration) {
+        self.led_stream
+            .inter_chunk_delay_us
+            .store(duration_as_micros(delay), Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    fn from_transport(device: D) -> Self {
+        Self {
+            device,
+            info: DeviceInfo {
+                vid: 0,
+                pid: 0,
+                interface: 0,
+                usage_page: 0,
+                usage: 0,
+                manufacturer: None,
+                product: None,
+                serial: None,
+                path: String::new(),
+            },
+            led_stream: LedStreamTuning::from_defaults(),
+        }
     }
 
     pub fn probe(&self) -> Result<ProbeReport> {
@@ -251,7 +434,7 @@ impl Connection {
         buf[0] = REPORT_ID;
         buf[1..].copy_from_slice(frame);
         trace!(report_id = REPORT_ID, hex = %hex::encode(&buf[1..16]), "TX");
-        self.device.write(&buf)?;
+        self.device.write_report(&buf)?;
         Ok(())
     }
 
@@ -272,7 +455,7 @@ impl Connection {
                     expected_cmd,
                 )));
             }
-            let n = self.device.read_timeout(&mut buf, remaining_ms)?;
+            let n = self.device.read_report_timeout(&mut buf, remaining_ms)?;
             if n == 0 {
                 continue;
             }
@@ -288,6 +471,34 @@ impl Connection {
         }
     }
 
+    /// Throw away unread input reports.
+    ///
+    /// Streaming LED writes leave intermediate chunk ACKs in the buffer on
+    /// purpose. A later GET or SET that expects a matched response has to
+    /// drop those first, or it will bind a stale reply to the new request
+    /// and every pair after that shifts by one. Timeout is zero so an empty
+    /// buffer costs one non-blocking read.
+    fn drain_input(&self) -> Result<usize> {
+        let mut buf = [0u8; PACKET_LEN];
+        let mut drained = 0usize;
+        for _ in 0..DRAIN_MAX_REPORTS {
+            let n = self.device.read_report_timeout(&mut buf, 0)?;
+            if n == 0 {
+                break;
+            }
+            drained += 1;
+        }
+        if drained == DRAIN_MAX_REPORTS {
+            tracing::warn!(
+                drained,
+                "HID input drain hit the per-call cap; more stale reports may remain"
+            );
+        } else if drained > 0 {
+            trace!(drained, "drained stale HID input reports");
+        }
+        Ok(drained)
+    }
+
     /// Run a single-chunk GET transaction: send request header, await response,
     /// return up to `content_size` payload bytes from the first response packet.
     fn get(&self, cmd_byte: u8, content_size: usize) -> Result<Vec<u8>> {
@@ -298,6 +509,7 @@ impl Connection {
         }
         let frame = build_frame(cmd_byte, content_size as u8, 0, &[], true);
         trace!(cmd = cmd_byte, content_size, "GET");
+        self.drain_input()?;
         self.write_output_report(&frame)?;
         let payload = self.read_response(cmd_byte, DEFAULT_TIMEOUT_MS)?;
         Ok(payload.into_iter().take(content_size).collect())
@@ -310,6 +522,7 @@ impl Connection {
         }
         let frame = build_frame(cmd_byte, payload.len() as u8, 0, payload, true);
         trace!(cmd = cmd_byte, len = payload.len(), "SET");
+        self.drain_input()?;
         self.write_output_report(&frame)?;
         // Set commands echo a response — drain it so it doesn't pollute the
         // next read. Ignore errors: some firmwares don't respond to SET ops.
@@ -324,6 +537,7 @@ impl Connection {
         let chunk = PAYLOAD_PER_PACKET;
         let num_chunks = content_size.div_ceil(chunk).max(1);
         let mut out = Vec::with_capacity(content_size);
+        self.drain_input()?;
         for i in 0..num_chunks {
             let addr = (i * chunk) as u16;
             let remaining = content_size - i * chunk;
@@ -343,7 +557,7 @@ impl Connection {
     /// Multi-chunk SET transaction. Slices the payload into ≤56-byte chunks
     /// and sends one request per chunk; the firmware acks each.
     fn set_many(&self, cmd_byte: u8, payload: &[u8]) -> Result<()> {
-        self.set_many_at(cmd_byte, 0, payload, true)
+        self.set_many_at(cmd_byte, 0, payload, true, SetAckMode::EveryChunk)
     }
 
     /// Multi-chunk GET starting at an arbitrary base address.
@@ -356,6 +570,7 @@ impl Connection {
         let chunk = PAYLOAD_PER_PACKET;
         let num_chunks = content_size.div_ceil(chunk).max(1);
         let mut out = Vec::with_capacity(content_size);
+        self.drain_input()?;
         for i in 0..num_chunks {
             let addr = addr_base.wrapping_add((i * chunk) as u16);
             let remaining = content_size - i * chunk;
@@ -381,20 +596,57 @@ impl Connection {
     ///   If `false`, *every* chunk has the flag cleared (used for two-phase
     ///   writes like `SET_MACRO` where the index page is written first with
     ///   `commit=false` and the data area follows with `commit=true`).
+    /// - `ack`: [`SetAckMode::EveryChunk`] reads a response after every
+    ///   chunk (keymap, macros). [`SetAckMode::Streaming`] is the per-key
+    ///   RGB path: intermediate chunks are write-only so a full 128-LED
+    ///   frame can exceed ~15 fps. The final chunk of each frame is still
+    ///   read, and every [`LED_STREAM_SYNC_EVERY_N_FRAMES`] frames the
+    ///   input buffer is drained. An optional inter-chunk delay
+    ///   ([`LED_STREAM_INTER_CHUNK_DELAY`]) can be set when a board overruns
+    ///   its OUT buffer.
+    ///
+    /// **Hardware-unverified** for the streaming mode. Mario must confirm
+    /// on a real AK820 Pro.
     fn set_many_at(
         &self,
         cmd_byte: u8,
         addr_base: u16,
         payload: &[u8],
         commit_on_last: bool,
+        ack: SetAckMode,
     ) -> Result<()> {
         let chunk = PAYLOAD_PER_PACKET;
         let num_chunks = payload.len().div_ceil(chunk).max(1);
+
+        // Stale streaming ACKs would satisfy this loop's first read and
+        // shift the rest of the transaction. Drop them before the first
+        // write so each read pairs with the chunk we just sent.
+        if ack == SetAckMode::EveryChunk {
+            self.drain_input()?;
+        }
+
+        let periodic_sync = if ack == SetAckMode::Streaming {
+            let every_n = self.led_stream.sync_every_n_frames.load(Ordering::Relaxed);
+            let frame_number = self
+                .led_stream
+                .frames_sent
+                .fetch_add(1, Ordering::Relaxed)
+                .wrapping_add(1);
+            every_n > 0 && frame_number % every_n == 0
+        } else {
+            false
+        };
+        let delay_us = if ack == SetAckMode::Streaming {
+            self.led_stream.inter_chunk_delay_us.load(Ordering::Relaxed)
+        } else {
+            0
+        };
+
         for i in 0..num_chunks {
             let addr = addr_base.wrapping_add((i * chunk) as u16);
             let start = i * chunk;
             let this_size = (payload.len() - start).min(chunk);
-            let is_final_chunk = i == num_chunks - 1;
+            let is_final_chunk = i + 1 == num_chunks;
             let last_flag = commit_on_last && is_final_chunk;
             let frame = build_frame(
                 cmd_byte,
@@ -409,10 +661,34 @@ impl Connection {
                 addr,
                 this_size,
                 last_flag,
+                ?ack,
                 "SET chunk"
             );
             self.write_output_report(&frame)?;
-            let _ = self.read_response(cmd_byte, DEFAULT_TIMEOUT_MS);
+            match ack {
+                SetAckMode::EveryChunk => {
+                    // Some firmwares don't respond to SET. Swallow the
+                    // timeout so a missing ACK doesn't fail the write.
+                    let _ = self.read_response(cmd_byte, DEFAULT_TIMEOUT_MS);
+                }
+                SetAckMode::Streaming => {
+                    if !is_final_chunk && delay_us > 0 {
+                        std::thread::sleep(Duration::from_micros(delay_us));
+                    }
+                    if is_final_chunk {
+                        // One ACK per frame is the overrun hedge: the
+                        // firmware has produced a response, so it has
+                        // consumed at least part of this frame. On every
+                        // Nth frame, also sweep the intermediate ACKs we
+                        // intentionally did not read.
+                        let read_res = self.read_response(cmd_byte, DEFAULT_TIMEOUT_MS);
+                        if periodic_sync {
+                            self.drain_input()?;
+                        }
+                        read_res.map(|_| ())?;
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -531,11 +807,17 @@ impl Connection {
         );
 
         // Phase 1: write index (no commit yet).
-        self.set_many_at(cmd::SET_MACRO, 0, &index, false)?;
+        self.set_many_at(cmd::SET_MACRO, 0, &index, false, SetAckMode::EveryChunk)?;
 
         // Phase 2: write data area (commits the transaction).
         if !data.is_empty() {
-            self.set_many_at(cmd::SET_MACRO, MACRO_DATA_ADDR, &data, true)?;
+            self.set_many_at(
+                cmd::SET_MACRO,
+                MACRO_DATA_ADDR,
+                &data,
+                true,
+                SetAckMode::EveryChunk,
+            )?;
         }
         Ok(())
     }
@@ -556,7 +838,9 @@ impl Connection {
         info!(index, "SET_TFT_BUILT_IN_INDEX");
         self.set(cmd::SET_TFT_BUILT_IN_INDEX, &[index])
     }
+}
 
+impl Connection<HidDevice> {
     /// Open the **TFT upload** interface — a different HID endpoint than the
     /// one returned by `open_control()`. The TFT path uses 4096-byte payload
     /// chunks (vs 56-byte chunks elsewhere), so it has its own HID interface
@@ -590,9 +874,15 @@ impl Connection {
             usage_page = format!("0x{:04x}", pick.usage_page),
             "opened TFT upload interface"
         );
-        Ok(Self { device, info: pick })
+        Ok(Self {
+            device,
+            info: pick,
+            led_stream: LedStreamTuning::from_env(),
+        })
     }
+}
 
+impl<D: HidTransport> Connection<D> {
     /// Upload a TFT animation as a single chunked transaction. Re-uses our
     /// existing `TftAnimation::encode()` for the 256-B-header + RGB565 stream
     /// and applies the bespoke 8-B per-chunk header — both decoded from the
@@ -654,7 +944,7 @@ impl Connection {
             dst.copy_from_slice(&payload[start..end]);
 
             trace!(chunk = i, total = total_chunks, "TFT TX");
-            self.device.write(&report)?;
+            self.device.write_report(&report)?;
         }
         Ok(())
     }
@@ -668,10 +958,23 @@ impl Connection {
     /// Write the 128-LED per-key colour map. Caller is responsible for
     /// switching the active lighting effect to one that reads from this
     /// buffer (the standard 20 modes ignore it).
+    ///
+    /// This is the write-only streaming path: intermediate chunks do not
+    /// wait for `read_response`, so a full frame can exceed ~15 fps. The
+    /// final chunk of each frame is still ACKed, and every
+    /// [`LED_STREAM_SYNC_EVERY_N_FRAMES`] frames the input buffer is
+    /// drained. **Hardware-unverified** — Mario must confirm smoothness
+    /// and that a later keymap / lighting / macro command still round-trips.
     pub fn set_custom_led(&self, map: &CustomLedMap) -> Result<()> {
         let payload = map.encode();
         info!(bytes = payload.len(), "SET_CUSTOM_LED_DATA");
-        self.set_many_at(cmd::SET_CUSTOM_LED_DATA, 0, &payload, true)
+        self.set_many_at(
+            cmd::SET_CUSTOM_LED_DATA,
+            0,
+            &payload,
+            true,
+            SetAckMode::Streaming,
+        )
     }
 
     /// Read the device-info struct (firmware, battery, profile, …).
@@ -705,4 +1008,288 @@ pub struct ProbeReport {
     pub interface: i32,
     pub product: Option<String>,
     pub firmware_version: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    /// `read_response` passes the time still left on its deadline, so a
+    /// blocking read is a small amount under [`DEFAULT_TIMEOUT_MS`] rather
+    /// than exactly that constant.
+    fn is_response_timeout(timeout_ms: i32) -> bool {
+        timeout_ms > 0 && timeout_ms <= DEFAULT_TIMEOUT_MS
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct ReadCall {
+        timeout_ms: i32,
+        n: usize,
+    }
+
+    struct MockState {
+        writes: Vec<Vec<u8>>,
+        inbox: VecDeque<Vec<u8>>,
+        reads: Vec<ReadCall>,
+        auto_ack: bool,
+        /// Byte written at the start of an auto-generated response payload.
+        auto_marker: u8,
+    }
+
+    struct MockHid {
+        state: Mutex<MockState>,
+    }
+
+    impl MockHid {
+        fn auto_ack() -> Self {
+            Self {
+                state: Mutex::new(MockState {
+                    writes: Vec::new(),
+                    inbox: VecDeque::new(),
+                    reads: Vec::new(),
+                    auto_ack: true,
+                    auto_marker: 0x42,
+                }),
+            }
+        }
+
+        fn push_inbox(&self, packet: Vec<u8>) {
+            self.state.lock().unwrap().inbox.push_back(packet);
+        }
+
+        fn inbox_len(&self) -> usize {
+            self.state.lock().unwrap().inbox.len()
+        }
+
+        fn writes(&self) -> Vec<Vec<u8>> {
+            self.state.lock().unwrap().writes.clone()
+        }
+
+        fn reads(&self) -> Vec<ReadCall> {
+            self.state.lock().unwrap().reads.clone()
+        }
+    }
+
+    impl HidTransport for MockHid {
+        fn write_report(&self, data: &[u8]) -> Result<usize> {
+            let mut state = self.state.lock().unwrap();
+            state.writes.push(data.to_vec());
+            if state.auto_ack {
+                let cmd = data.get(2).copied().unwrap_or(0);
+                let marker = state.auto_marker;
+                state.inbox.push_back(response_packet(cmd, marker));
+            }
+            Ok(data.len())
+        }
+
+        fn read_report_timeout(&self, buf: &mut [u8], timeout_ms: i32) -> Result<usize> {
+            let mut state = self.state.lock().unwrap();
+            if let Some(packet) = state.inbox.pop_front() {
+                let n = packet.len().min(buf.len());
+                buf[..n].copy_from_slice(&packet[..n]);
+                state.reads.push(ReadCall { timeout_ms, n });
+                Ok(n)
+            } else if timeout_ms == 0 {
+                state.reads.push(ReadCall { timeout_ms, n: 0 });
+                Ok(0)
+            } else {
+                state.reads.push(ReadCall { timeout_ms, n: 0 });
+                Err(Error::UnexpectedResponse(
+                    "mock HID inbox empty on blocking read".into(),
+                ))
+            }
+        }
+    }
+
+    fn response_packet(cmd_byte: u8, marker: u8) -> Vec<u8> {
+        let mut packet = vec![0u8; PACKET_LEN];
+        packet[0] = MAGIC_INCOMING;
+        packet[1] = cmd_byte;
+        packet[HEADER_LEN] = marker;
+        packet
+    }
+
+    fn streaming_conn(sync_every: u32) -> Connection<MockHid> {
+        let conn = Connection::from_transport(MockHid::auto_ack());
+        conn.set_led_stream_sync_every_n_frames(sync_every);
+        conn.set_led_stream_inter_chunk_delay(Duration::ZERO);
+        conn
+    }
+
+    fn blocking_reads(reads: &[ReadCall]) -> Vec<ReadCall> {
+        reads
+            .iter()
+            .copied()
+            .filter(|call| call.timeout_ms > 0)
+            .collect()
+    }
+
+    fn full_led_chunks() -> usize {
+        CUSTOM_LED_BYTES.div_ceil(PAYLOAD_PER_PACKET)
+    }
+
+    #[test]
+    fn full_led_frame_is_ten_chunks() {
+        // 128 LEDs × 4 bytes / 56-byte payload. The streaming tests below
+        // pin read/write counts against this so a framing change can't
+        // silently shrink the transfer.
+        assert_eq!(full_led_chunks(), 10);
+    }
+
+    #[test]
+    fn streaming_led_write_skips_per_chunk_ack_and_reads_final_chunk() {
+        let conn = streaming_conn(0);
+        conn.set_custom_led(&CustomLedMap::default()).unwrap();
+
+        let writes = conn.device.writes();
+        let reads = conn.device.reads();
+        assert_eq!(writes.len(), 10, "one output report per chunk");
+        // Report layout: [report_id, magic, cmd, len, addr_lo, addr_hi, opt0, last_flag, ...]
+        assert_eq!(writes[0][2], cmd::SET_CUSTOM_LED_DATA);
+        assert_eq!(writes[0][7], 0, "intermediate chunk is not the commit");
+        assert_eq!(writes[9][7], 1, "final chunk commits the frame");
+
+        let blocking = blocking_reads(&reads);
+        assert_eq!(
+            blocking.len(),
+            1,
+            "only the final chunk of the frame waits for a response"
+        );
+        assert!(
+            is_response_timeout(blocking[0].timeout_ms),
+            "final-chunk read uses the normal response timeout, got {}",
+            blocking[0].timeout_ms
+        );
+        assert!(blocking[0].n > 0);
+        assert!(
+            reads.iter().all(|call| call.timeout_ms > 0),
+            "a non-sync frame must not drain (no zero-timeout reads)"
+        );
+        // 10 auto-ACKs were queued, one was consumed by the final-chunk read.
+        assert_eq!(conn.device.inbox_len(), 9);
+    }
+
+    #[test]
+    fn streaming_drains_input_every_n_frames() {
+        let conn = streaming_conn(2);
+
+        conn.set_custom_led(&CustomLedMap::default()).unwrap();
+        assert_eq!(conn.device.writes().len(), 10);
+        assert_eq!(blocking_reads(&conn.device.reads()).len(), 1);
+        assert_eq!(
+            conn.device.inbox_len(),
+            9,
+            "frame 1 leaves intermediate ACKs"
+        );
+        assert!(
+            conn.device.reads().iter().all(|call| call.timeout_ms > 0),
+            "frame 1 of every-2 is not a drain frame"
+        );
+
+        conn.set_custom_led(&CustomLedMap::default()).unwrap();
+        assert_eq!(conn.device.writes().len(), 20);
+        let reads = conn.device.reads();
+        assert_eq!(blocking_reads(&reads).len(), 2, "each frame reads once");
+        let drained = reads
+            .iter()
+            .filter(|call| call.timeout_ms == 0 && call.n > 0)
+            .count();
+        let drain_terminator = reads
+            .iter()
+            .filter(|call| call.timeout_ms == 0 && call.n == 0)
+            .count();
+        // Frame 2 starts with 9 leftover ACKs, queues 10 more, the final-chunk
+        // read consumes 1, and the periodic drain takes the other 18.
+        assert_eq!(drained, 18);
+        assert_eq!(drain_terminator, 1);
+        assert_eq!(conn.device.inbox_len(), 0);
+    }
+
+    #[test]
+    fn every_chunk_set_still_reads_each_chunk() {
+        let conn = streaming_conn(0);
+        let payload = vec![0u8; PAYLOAD_PER_PACKET * 3];
+        conn.set_many_at(cmd::SET_KEY, 0, &payload, true, SetAckMode::EveryChunk)
+            .unwrap();
+
+        assert_eq!(conn.device.writes().len(), 3);
+        let reads = conn.device.reads();
+        let blocking = blocking_reads(&reads);
+        assert_eq!(blocking.len(), 3, "keymap-style writes ACK every chunk");
+        assert!(
+            blocking
+                .iter()
+                .all(|call| is_response_timeout(call.timeout_ms)),
+            "per-chunk reads use the normal response timeout: {blocking:?}"
+        );
+        assert_eq!(
+            reads.iter().filter(|call| call.timeout_ms == 0).count(),
+            1,
+            "one zero-timeout drain probe before the first chunk"
+        );
+        assert_eq!(conn.device.inbox_len(), 0);
+    }
+
+    #[test]
+    fn read_expecting_command_drains_stale_same_cmd_response() {
+        let conn = streaming_conn(0);
+        conn.device
+            .push_inbox(response_packet(cmd::GET_CUSTOM_LED_DATA, 0xEE));
+
+        let map = conn.get_custom_led().unwrap();
+        assert_eq!(
+            map.leds[0].led_id, 0x42,
+            "the GET payload must be the response queued by the write, not the stale ACK"
+        );
+        assert_ne!(map.leds[0].led_id, 0xEE);
+
+        let reads = conn.device.reads();
+        let first_blocking = reads.iter().position(|call| call.timeout_ms > 0).unwrap();
+        assert!(
+            reads[..first_blocking]
+                .iter()
+                .any(|call| call.timeout_ms == 0 && call.n > 0),
+            "stale report is consumed by the pre-command drain"
+        );
+    }
+
+    #[test]
+    fn streaming_inter_chunk_delay_sleeps_between_chunks_only() {
+        let conn = streaming_conn(0);
+        conn.set_led_stream_inter_chunk_delay(Duration::from_millis(20));
+        let started = Instant::now();
+        conn.set_many_at(
+            cmd::SET_CUSTOM_LED_DATA,
+            0,
+            &[0u8; PAYLOAD_PER_PACKET * 2],
+            true,
+            SetAckMode::Streaming,
+        )
+        .unwrap();
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= Duration::from_millis(15),
+            "two chunks insert one inter-chunk delay, elapsed={elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_millis(250),
+            "delay must not turn into a per-chunk response timeout, elapsed={elapsed:?}"
+        );
+        assert_eq!(conn.device.writes().len(), 2);
+        assert_eq!(blocking_reads(&conn.device.reads()).len(), 1);
+    }
+
+    #[test]
+    fn env_parsers_accept_integers_and_fall_back() {
+        assert_eq!(parse_env_u32(Some("3"), 4), 3);
+        assert_eq!(parse_env_u32(Some(" 8 "), 4), 8);
+        assert_eq!(parse_env_u32(Some("nope"), 4), 4);
+        assert_eq!(parse_env_u32(None, 4), 4);
+        assert_eq!(parse_env_u64(Some("250"), 0), 250);
+        assert_eq!(parse_env_u64(Some(""), 7), 7);
+        assert_eq!(parse_env_u64(None, 7), 7);
+    }
 }

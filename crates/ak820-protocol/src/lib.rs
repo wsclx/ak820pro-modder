@@ -9,7 +9,10 @@ pub mod device;
 pub mod error;
 pub mod protocol;
 
-pub use device::{enumerate, probe_interfaces, Connection, DeviceInfo, InterfaceProbe};
+pub use device::{
+    enumerate, probe_interfaces, Connection, DeviceInfo, HidTransport, InterfaceProbe,
+    LED_STREAM_INTER_CHUNK_DELAY, LED_STREAM_SYNC_EVERY_N_FRAMES,
+};
 pub use error::{Error, Result};
 pub use protocol::{Frame, ReportId};
 

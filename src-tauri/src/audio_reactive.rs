@@ -9,7 +9,7 @@
 //!                                ↓
 //!                       preset map (Frame → CustomLedMap)
 //!                                ↓
-//!                  Connection::set_custom_led + apply_lighting(Custom)
+//!                  Connection::set_custom_led (streaming ACK) + apply_lighting(Custom)
 //! ```
 //!
 //! Only one such task can run at a time — `start()` returns silently if
@@ -21,7 +21,7 @@
 //! # Why this isn't `spawn_blocking`
 //!
 //! The inner loop is mostly waiting — `try_recv` on the SCStream pipe,
-//! `tokio::time::sleep(33ms)`, then a short HID write. Spawning a
+//! `tokio::time::sleep` for one frame, then a short HID write. Spawning a
 //! regular `tokio::spawn` task keeps the loop integrated with the
 //! existing async commands (which use the same `ConnState` mutex) and
 //! lets us cancel via a `watch::Sender<bool>` stop signal instead of
@@ -44,14 +44,18 @@ use crate::AppError;
 /// Target output framerate.
 ///
 /// One `SET_CUSTOM_LED_DATA` is `ceil(128 LEDs × 4 B / 56 B per packet) = 10`
-/// HID output reports. At ~3 ms per chunk (write + ack roundtrip), a full
-/// LED update takes ~30 ms. At 30 fps that's a 33 ms window — essentially
-/// 100% mutex contention against the rest of the app, which on Mario's
-/// box manifested as visible flicker. 15 fps doubles the headroom and
-/// reads smoothly to the eye. If we ever want >15 fps we'd need to skip
-/// the per-chunk ack read in `set_many_at`, which is a protocol-layer
-/// change.
-const TARGET_FPS: u32 = 15;
+/// HID output reports. Waiting for a firmware ACK after every chunk held a
+/// full update at ~30 ms, and 15 fps was the rate that left the UI mutex
+/// any headroom. `Connection::set_custom_led` now skips those per-chunk
+/// reads: it ACKs the final chunk of each frame and drains the input
+/// buffer every `LED_STREAM_SYNC_EVERY_N_FRAMES` frames, so the transfer
+/// is write-bound and 30 fps fits in the frame budget.
+///
+/// **Hardware-unverified.** Mario must confirm on a real AK820 Pro that
+/// 30 fps stays smooth and does not overrun the firmware buffer. If it
+/// does, lower this constant, set `AK820_LED_SYNC_EVERY_N_FRAMES=1`,
+/// and/or set `AK820_LED_CHUNK_DELAY_US`.
+const TARGET_FPS: u32 = 30;
 
 /// Brightness ceiling for any single channel inside a band-coloured
 /// pixel. 220 (instead of 255) leaves the keyboard's overall mode-light
@@ -130,7 +134,7 @@ impl AudioReactiveState {
         };
         let _ = inner.stop_tx.send(true);
         // Don't block the Tauri command on `await`ing the task; the
-        // loop will see the stop signal on its next tick (≤33ms) and
+        // loop will see the stop signal on its next tick (one frame) and
         // clean up. UI gets immediate `false` from `status`.
         inner.handle.abort();
         tracing::info!("audio_reactive: stop requested");
@@ -157,9 +161,9 @@ async fn run_loop(
     // Dedup against the previously-sent frame. With silence (or any
     // steady-state audio), the analyzer settles into a constant Frame
     // and `signature_of` collapses to a constant `(bass, mids, highs)`
-    // triple. Sending the *same* 10-chunk HID transfer 15× per second
-    // turned out to overrun the firmware's pipeline (visible flicker
-    // even with the toggle on and no music playing). Skipping unchanged
+    // triple. Sending the *same* 10-chunk HID transfer on every tick
+    // overruns the firmware's pipeline (visible flicker even with the
+    // toggle on and no music playing). Skipping unchanged
     // frames makes the silence case zero-traffic and the music case
     // exactly as busy as the music demands.
     //
@@ -254,6 +258,12 @@ async fn enable_custom_mode(conn: &crate::ConnState) -> Result<(), AppError> {
 async fn write_custom_led(conn: &crate::ConnState, map: CustomLedMap) -> Result<(), AppError> {
     conn.with(|slot| {
         let c = crate::ensure_open(slot)?;
+        // `set_custom_led` is the write-only streaming path in
+        // `set_many_at`: no per-chunk `read_response`. The final chunk
+        // of the frame is still ACKed, and every N frames the input
+        // buffer is drained (`LED_STREAM_SYNC_EVERY_N_FRAMES`, optional
+        // `AK820_LED_CHUNK_DELAY_US`). Hardware-unverified — Mario must
+        // confirm the keyboard keeps up above ~15 fps.
         c.set_custom_led(&map)?;
         Ok(())
     })
@@ -351,6 +361,19 @@ enum Channel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_fps_exceeds_the_per_chunk_ack_ceiling() {
+        // The old per-chunk ACK path saturated around 15 fps. The streaming
+        // write in `set_custom_led` is what makes a higher target honest.
+        // `black_box` keeps this a runtime check — a bare `TARGET_FPS > 15`
+        // is a const assertion and clippy (`-D warnings`) rejects it.
+        let fps = std::hint::black_box(TARGET_FPS);
+        assert!(
+            fps > 15,
+            "audio-reactive output should exceed the old ~15 fps ACK ceiling (got {fps})"
+        );
+    }
 
     #[test]
     fn spectrum_map_assigns_each_band_to_distinct_columns() {

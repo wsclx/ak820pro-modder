@@ -453,6 +453,10 @@ async fn set_custom_led(
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
+            // Streaming path: `set_many_at` skips per-chunk `read_response`
+            // for this write-only payload. Final chunk of the frame is
+            // still ACKed; every N frames the input buffer is drained.
+            // Hardware-unverified — Mario must confirm on a real AK820 Pro.
             conn.set_custom_led(&map)?;
             Ok(())
         })
@@ -1064,10 +1068,7 @@ async fn apply_tft_image(
 }
 
 #[tauri::command]
-async fn apply_tft_preset(
-    memory: State<'_, Arc<TftMemory>>,
-    id: String,
-) -> Result<(), AppError> {
+async fn apply_tft_preset(memory: State<'_, Arc<TftMemory>>, id: String) -> Result<(), AppError> {
     // Build the animation off-thread — pixel generation for the busier
     // presets (scanline, checkerboard) does a ~half-megabyte of allocation
     // and we don't want to block the tokio worker on that.
@@ -1120,9 +1121,7 @@ async fn now_playing_tft_start(
 }
 
 #[tauri::command]
-async fn now_playing_tft_stop(
-    state: State<'_, Arc<NowPlayingTftState>>,
-) -> Result<(), AppError> {
+async fn now_playing_tft_stop(state: State<'_, Arc<NowPlayingTftState>>) -> Result<(), AppError> {
     state.stop().await;
     Ok(())
 }

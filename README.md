@@ -138,7 +138,7 @@ Full CLI help is `ak820 --help`.
 - macOS-only · macOS 13+ · uses Apple's [ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit) for the system-audio tap (Screen-Recording permission required, same TCC bucket as the screen-capture API even for audio-only streams)
 - Pure-Rust FFT pipeline (`realfft` crate) in `crates/ak820-audio-reactive/` — splits the spectrum into bass / mids / highs bands, applies a Hann window + dB scaling + asymmetric EMA smoothing
 - Spectrum preset maps each band to a vertical zone on the keyboard: cols 0-4 red (bass), cols 5-10 green (mids), cols 11-15 blue (highs); gamma + brightness floor so the keyboard's structure stays visible even between beats
-- **Known limitations (why this is alpha)**: the wire-level cadence of `SET_CUSTOM_LED_DATA` (10 chunked HID reports per frame) makes the firmware's per-key RGB pipeline visibly stutter on busy music. Frame deduplication helps but doesn't fully eliminate the flicker. Improving this needs a protocol-layer change (skip the per-chunk ACK in `set_many_at` for write-only payloads).
+- **Known limitations (why this is alpha)**: a full 128-LED frame is still 10 chunked HID reports. The host now skips the per-chunk ACK on that write-only path (the final chunk of each frame is still read, and the input buffer is drained every N frames) so updates can exceed ~15 fps. Audio-reactive targets 30 fps. **Hardware-unverified — Mario must verify** on a real AK820 Pro that busy music looks smooth and that a later keymap / lighting / macro command still round-trips. Frame deduplication still suppresses the silence case.
 - **Two-stage UI gate**: Lighting view has a "Locked / Unlocked" toggle for the experimental opt-in, then a "Streaming Off / On" toggle for the actual capture. The unlock persists across launches via `localStorage` so contributors don't re-click it, but the casual user can't trip the feature accidentally.
 
 ### Coming next
@@ -195,7 +195,7 @@ Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hard
 | 6a — Now-Playing reader | ✅ | macOS Music.app + Spotify desktop, surfaced in System view |
 | 6b — Automations engine | ✅ | AppleScript / Shortcut / Shell library, 15 curated starters, keyboard-side triggers via F13–F24 markers |
 | 6c — Cross-cutting presets | ✅ | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle |
-| 6d — Audio-reactive lighting | 🧪 alpha | ScreenCaptureKit + Hann-windowed real FFT → bass/mids/highs → Spectrum preset on the per-key grid. Two-stage Alpha unlock in the Lighting view. Real-music smoothness still WIP (firmware HID pipeline saturates at ~15 fps for a full 128-LED update). |
+| 6d — Audio-reactive lighting | 🧪 alpha | ScreenCaptureKit + Hann-windowed real FFT → bass/mids/highs → Spectrum preset on the per-key grid. Two-stage Alpha unlock in the Lighting view. Streaming per-key writes skip the per-chunk ACK (30 fps target). **Hardware-unverified — Mario must verify** smoothness and that later commands stay in sync. |
 | 6e — Now-playing on TFT | 🛣 | Gated on Phase 5b — stream the Now-Playing reader's snapshot to the keyboard's display |
 | 6f — iCloud profile sync | 🧪 beta | Automations library round-trips through `~/Library/Mobile Documents/com~apple~CloudDocs/ak820pro-modder/`. Toggle + Push/Pull/Refresh in System view. Per-record merge + custom-LED snapshots + settings come in 0.7.x. |
 | 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
