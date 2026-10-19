@@ -98,7 +98,7 @@ export function HostMacros() {
     if (!macro) return;
     setError(null); setNotice("Starts in 3 seconds. Switch to the destination window; Stop cancels playback."); setBusy(true);
     try { await invoke("host_macro_run", { id: macro.id }); setNotice("Macro finished."); }
-    catch (e) { setError(formatError(e)); }
+    catch (e) { const message = formatError(e); setNotice(message === "Macro stopped" ? "Macro stopped." : ""); setError(message === "Macro stopped" ? null : message); }
     finally { setBusy(false); }
   }
   return <div className="space-y-5">

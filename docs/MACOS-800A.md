@@ -36,7 +36,7 @@ is not used to infer firmware 1.11 or to enable commands.
 | Sleep timer | Never / 1 / 5 / 30 minutes, START/17/data | Five-minute setting sent; idle timeout and persistence not observed |
 | Battery | Query 20 01; FF preserved as wired/full sentinel | Actual FF reply; percentage/charging not invented |
 | Key remapping on Mac | Device-scoped hidutil, baseline backup, readback and undo | Temporary A→A and F24→F24 round trip restored initial mappings |
-| Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Six recorded key events survived app restart; manual playback typed фис in the app test field under Russian input |
+| Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Six recorded key events survived app restart; manual playback typed фис under Russian input; owner confirmed the global shortcut; Stop cancelled before input |
 | Host automations / profile sync | Existing host paths | Original behavior retained |
 
 Onboard key/Fn tables, onboard macros, knob binding, per-key RGB, live audio RGB,
