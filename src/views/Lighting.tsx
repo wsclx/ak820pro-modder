@@ -1,3 +1,4 @@
+import { useCapabilities } from "../capabilities";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Direction, LightingConfig, LightingModeInfo } from "../types";
@@ -10,6 +11,8 @@ const ALL_DIRECTIONS: Direction[] = ["left", "down", "up", "right"];
 const APPLY_DEBOUNCE_MS = 80;
 
 export function Lighting() {
+  const caps = useCapabilities();
+  const legacy = caps?.protocol === "legacy_feature";
   const [modes, setModes] = useState<LightingModeInfo[] | null>(null);
   const [cfg, setCfg] = useState<LightingConfig>({
     mode: "static",
@@ -201,6 +204,7 @@ export function Lighting() {
       />
 
       <ErrorBanner>{err}</ErrorBanner>
+      {legacy && <p className="mb-5 text-sm text-fg-2">This revision supports the 20 built-in lighting effects. Per-key painting and audio-reactive lighting need a different protocol and are unavailable.</p>}
 
       <div className="grid gap-6">
         <div
@@ -217,7 +221,7 @@ export function Lighting() {
           }
         >
           <div className="flex flex-wrap gap-2">
-            {modes.map((m) => {
+            {modes.filter((m) => !legacy || m.name !== "custom").map((m) => {
               const isActive = m.name === cfg.mode;
               return (
                 <Button
@@ -260,7 +264,7 @@ export function Lighting() {
               <Badge tone="neutral">primary</Badge>
             </div>
 
-            <div className="mt-5 border-t border-line/60 pt-4">
+            {!legacy && <div className="mt-5 border-t border-line/60 pt-4">
               <Toggle
                 checked={hasSecondary}
                 onChange={(v) => update("secondary", v ? "000000" : null)}
@@ -288,7 +292,7 @@ export function Lighting() {
                   <Badge tone="neutral">secondary</Badge>
                 </div>
               )}
-            </div>
+            </div>}
           </Card>
 
           <Card
@@ -324,10 +328,10 @@ export function Lighting() {
               <input
                 type="number"
                 min={0}
-                max={255}
+                max={legacy ? 1 : 255}
                 value={cfg.color_mode}
                 onChange={(e) =>
-                  update("color_mode", Math.max(0, Math.min(255, Number(e.target.value) || 0)))
+                  update("color_mode", Math.max(0, Math.min(legacy ? 1 : 255, Number(e.target.value) || 0)))
                 }
                 className="w-24 font-mono"
               />
@@ -353,7 +357,7 @@ export function Lighting() {
           * controls to find it, and the Alpha badge + amber warning
           * makes its status unambiguous when they get there.
           */}
-        <Card
+        {!legacy && <Card
           title={
             <span className="inline-flex items-center gap-2">
               <span>Audio-reactive</span>
@@ -414,7 +418,7 @@ export function Lighting() {
               {audioReactive ? "Streaming" : "Off"}
             </Toggle>
           </div>
-        </Card>
+        </Card>}
       </div>
     </>
   );

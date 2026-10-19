@@ -8,6 +8,9 @@ import { Macros } from "./views/Macros";
 import { Presets } from "./views/Presets";
 import { System } from "./views/System";
 import { Tft } from "./views/Tft";
+import { CapabilityContext, DeviceCapabilities, UnavailableFeature } from "./capabilities";
+import { HostKeymap, HostMacros } from "./views/HostKeyboard";
+import { LegacySystem } from "./views/LegacySystem";
 import { ICLOUD_SYNC_ENABLED_KEY, trackStartupSync } from "./components/SyncCard";
 import {
   Layout,
@@ -53,6 +56,7 @@ interface ProbeReport {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
+  const [capabilities, setCapabilities] = useState<DeviceCapabilities | null>(null);
   const [probe, setProbe] = useState<ProbeReport | null>(null);
 
   // iCloud auto-sync on app start. The backend merges the iCloud copy of
@@ -82,7 +86,8 @@ export default function App() {
       if (!alive) return;
       try {
         const p = await invoke<ProbeReport>("probe_device");
-        if (alive) setProbe(p);
+        const caps = p.connected ? await invoke<DeviceCapabilities>("get_capabilities") : null;
+        if (alive) { setProbe(p); setCapabilities(caps); }
       } catch {
         if (alive) setProbe(null);
       }
@@ -100,7 +105,7 @@ export default function App() {
   };
 
   return (
-    <Layout
+    <CapabilityContext.Provider value={capabilities}><Layout
       nav={NAV}
       active={tab}
       onSelect={setTab}
@@ -110,12 +115,12 @@ export default function App() {
     >
       {tab === "connect" && <Connect onReconnect={reconnect} />}
       {tab === "lighting" && <Lighting />}
-      {tab === "system" && <System />}
-      {tab === "keymap" && <Keymap />}
-      {tab === "macros" && <Macros />}
+      {tab === "system" && (capabilities?.protocol === "legacy_feature" ? <LegacySystem /> : <System />)}
+      {tab === "keymap" && (capabilities && !capabilities.keymap ? capabilities.host_keyboard ? <HostKeymap /> : <UnavailableFeature name="Onboard key remapping" /> : <Keymap />)}
+      {tab === "macros" && (capabilities && !capabilities.macros ? capabilities.host_keyboard ? <HostMacros /> : <UnavailableFeature name="Onboard macros" /> : <Macros />)}
       {tab === "automations" && <Automations />}
       {tab === "presets" && <Presets />}
       {tab === "tft" && <Tft />}
-    </Layout>
+    </Layout></CapabilityContext.Provider>
   );
 }

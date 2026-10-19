@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { useCapabilities } from "../capabilities";
 import { invoke } from "@tauri-apps/api/core";
 import { Badge, Button, Card, ErrorBanner } from "../components/ui";
 import { PageHeader } from "../components/Layout";
@@ -174,10 +175,12 @@ function ApplyModal({
   onCancel: () => void;
   onApply: (opts: ApplyPresetOptions) => void;
 }) {
+  const caps = useCapabilities();
+  const keymapAvailable = caps?.keymap !== false;
   const [opts, setOpts] = useState<ApplyPresetOptions>({
     lighting: preset.lighting !== null,
-    keymap: preset.keymap_overrides.length > 0,
-    fn_keymap: preset.fn_keymap_overrides.length > 0,
+    keymap: keymapAvailable && preset.keymap_overrides.length > 0,
+    fn_keymap: keymapAvailable && preset.fn_keymap_overrides.length > 0,
     automations: preset.automation_seeds.length > 0,
   });
   const nothingPicked = !opts.lighting && !opts.keymap && !opts.fn_keymap && !opts.automations;
@@ -212,17 +215,17 @@ function ApplyModal({
           />
           <Option
             label="Base-layer key overrides"
-            available={preset.keymap_overrides.length > 0}
+            available={keymapAvailable && preset.keymap_overrides.length > 0}
             checked={opts.keymap}
             onToggle={(v) => setOpts({ ...opts, keymap: v })}
-            detail={preset.keymap_overrides.length > 0 ? `${preset.keymap_overrides.length} slot(s) will be patched. Unchanged slots stay as they are.` : "Preset doesn't change base-layer keys"}
+            detail={!keymapAvailable ? "Not supported by this keyboard revision" : preset.keymap_overrides.length > 0 ? `${preset.keymap_overrides.length} slot(s) will be patched. Unchanged slots stay as they are.` : "Preset doesn't change base-layer keys"}
           />
           <Option
             label="Fn-layer key overrides"
-            available={preset.fn_keymap_overrides.length > 0}
+            available={keymapAvailable && preset.fn_keymap_overrides.length > 0}
             checked={opts.fn_keymap}
             onToggle={(v) => setOpts({ ...opts, fn_keymap: v })}
-            detail={preset.fn_keymap_overrides.length > 0 ? `${preset.fn_keymap_overrides.length} slot(s) will be patched on the Fn layer.` : "Preset doesn't change Fn-layer keys"}
+            detail={!keymapAvailable ? "Not supported by this keyboard revision" : preset.fn_keymap_overrides.length > 0 ? `${preset.fn_keymap_overrides.length} slot(s) will be patched on the Fn layer.` : "Preset doesn't change Fn-layer keys"}
           />
           <Option
             label="Add automations"

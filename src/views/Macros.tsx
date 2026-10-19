@@ -34,7 +34,7 @@ interface MacroLimits {
  * Keep this list pragmatic — anything not here gets recorded as keycode 0 with
  * a warning so the user can manually fix the event later.
  */
-const CODE_TO_HID: Record<string, number> = {
+export const CODE_TO_HID: Record<string, number> = {
   // Letters A–Z (HID 4..29)
   ...Object.fromEntries(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((c, i) => [`Key${c}`, 4 + i]),

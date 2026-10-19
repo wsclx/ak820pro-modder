@@ -2,11 +2,14 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for AK820 Pro",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "shell:allow-open",
     "global-shortcut:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-confirm"
   ]
 }

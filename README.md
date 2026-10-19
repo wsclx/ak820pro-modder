@@ -43,9 +43,19 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 
 **Version 0.7.0-beta.** Lighting (incl. per-key paint surface), keymap (with factory-default reset), macros, system info, and the host-side automations engine — including a curated 15-entry starter library and one-click cross-cutting presets — are all hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). 0.7 adds three new top-level capabilities: **audio-reactive lighting** (🧪 alpha, behind a two-stage opt-in), **iCloud-Drive profile sync** for the automations library (🧪 beta), and **four additional physical layouts** — ANSI, ISO-UK, ISO-ES, ISO-FR — driven by a sidebar picker (🧪 beta · unverified without hardware). TFT upload is protocol-complete and ships a CLI smoke test; the in-app TFT UI is gated on one final reverse-engineering step. See the [Roadmap](#roadmap) section for details.
 
-> ⚠️ **Layout scope.** `v0.6.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. The wire protocol itself is layout-agnostic, so the lighting / system / per-key-RGB / TFT paths work on every AK820 Pro variant — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
+> ⚠️ **Layout scope.** `v0.6.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. Within the web-output firmware profile the wire protocol is layout-agnostic; other firmware profiles have separate support requirements — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
 
 > ⚠️ Beta software. Read-only paths are safe; write paths have been used extensively on a single physical device without bricking, but there are no warranties. The keyboard's hidden bootloader (under the spacebar, see hardware notes) is your rescue path if anything ever goes sideways.
+
+### USB 0C45:800A / FF13 keyboards
+
+This firmware revision now connects on macOS and has a separate, hardware-tested
+image/GIF upload path. Lighting, local clock sync, sleep settings and battery
+status use feature reports. Key remapping and keyboard macros have explicit
+Mac-only fallbacks with readback/undo and app-local recording. Onboard key/Fn
+maps, onboard macros, per-key RGB and live TFT streams remain unavailable on
+this revision. See the [feature matrix and USB verification](docs/MACOS-800A.md).
+The web-output firmware features described elsewhere keep their existing path.
 
 ## Quick start
 

@@ -2,9 +2,9 @@
 //!
 //! Decoded from the official AJAZZ online driver
 //! (https://ajazz.driveall.cn — see `docs/reverse-engineering/online-driver/default-protocol.js`).
-//! The upstream Linux ports (`gohv`, `TaxMachine`) use a completely different,
-//! seemingly broken layout that the real firmware ignores on macOS — see
-//! `docs/PROTOCOL.md` for the diff.
+//! This framing applies to the web-output firmware profile. Older FF13
+//! boards use a separate feature-report layout implemented in `legacy`;
+//! choose by endpoint profile, not operating system.
 
 use crate::error::*;
 

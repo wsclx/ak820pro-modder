@@ -27,8 +27,22 @@ struct Cli {
 enum Cmd {
     /// List every HID interface the keyboard exposes
     List,
-    /// Open the control interface and run a probe handshake
+    /// Open the control interface; read a feature report on legacy firmware
     Probe,
+    /// Synchronize the keyboard RTC to the host's local time. `--dry-run`
+    /// prints the family-B (feature-report) packet without opening a device.
+    Clock {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Set the legacy sleep timer in minutes: 0 (never), 1, 5, 30.
+    Sleep {
+        minutes: u8,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Report the detected protocol's supported capabilities.
+    Capabilities,
     /// Lighting control
     #[command(subcommand)]
     Lighting(LightingCmd),
@@ -59,6 +73,17 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum TftCmd {
+    /// Upload PNG/JPEG/GIF; --dry-run validates without opening a device.
+    Upload {
+        path: std::path::PathBuf,
+        #[arg(long, default_value = "fill", value_parser = ["fill", "contain", "stretch"])]
+        fit: String,
+        /// Permit the older protocol to replace the stored animation.
+        #[arg(long)]
+        allow_legacy: bool,
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Upload a single solid-colour frame to the TFT.
     Solid {
         #[arg(long, default_value = "FF00FF")]
@@ -177,6 +202,7 @@ enum LightingCmd {
 }
 
 fn main() -> Result<()> {
+    ak820_protocol::legacy_tft::worker_entry();
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -189,12 +215,53 @@ fn main() -> Result<()> {
         Cmd::List => cmd_list(cli.json),
         Cmd::Probe => cmd_probe(cli.json),
         Cmd::Info => cmd_info(cli.json),
+        Cmd::Capabilities => {
+            let connection = ak820_protocol::Connection::open_control()?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(
+                    &ak820_protocol::capabilities::DeviceCapabilities::for_protocol(
+                        connection.info().protocol
+                    )
+                )?
+            );
+            Ok(())
+        }
+        Cmd::Clock { dry_run } => {
+            let now = ak820_protocol::legacy::local_now()?;
+            let packet = ak820_protocol::legacy::clock_packet(&now.into())?;
+            if !dry_run {
+                ak820_protocol::Connection::open_control()?.set_tft_datetime(&now.into())?;
+            }
+            println!(
+                "{}",
+                serde_json::json!({ "dry_run": dry_run, "local_time": now.to_string(), "payload_hex": hex::encode(packet) })
+            );
+            Ok(())
+        }
+        Cmd::Sleep { minutes, dry_run } => {
+            let packet = ak820_protocol::legacy::sleep_packet(minutes)?;
+            if !dry_run {
+                ak820_protocol::Connection::open_control()?.set_legacy_sleep(minutes)?;
+            }
+            println!(
+                "{}",
+                serde_json::json!({ "dry_run": dry_run, "sleep_minutes_sent": minutes, "payload_hex": hex::encode(packet), "read_back_available": false })
+            );
+            Ok(())
+        }
         Cmd::GameMode(GameModeCmd::Get) => cmd_game_mode_get(cli.json),
         Cmd::GameMode(GameModeCmd::SetSleep { value }) => cmd_game_mode_set_sleep(cli.json, value),
         Cmd::Macros(MacrosCmd::List) => cmd_macros_list(cli.json),
         Cmd::Rgb(RgbCmd::Fill { color }) => cmd_rgb_fill(cli.json, &color),
         Cmd::Rgb(RgbCmd::Rainbow) => cmd_rgb_rainbow(cli.json),
         Cmd::HidDescriptors => cmd_hid_descriptors(cli.json),
+        Cmd::Tft(TftCmd::Upload {
+            path,
+            fit,
+            allow_legacy,
+            dry_run,
+        }) => cmd_tft_upload(cli.json, &path, &fit, allow_legacy, dry_run),
         Cmd::Tft(TftCmd::Solid { color }) => cmd_tft_solid(cli.json, &color),
         Cmd::Tft(TftCmd::Cycle { delay }) => cmd_tft_cycle(cli.json, delay),
         Cmd::Tft(TftCmd::SelectIndex { index }) => cmd_tft_select_index(cli.json, index),
@@ -398,6 +465,18 @@ fn direction_name(d: &Direction) -> &'static str {
 
 fn cmd_info(json: bool) -> Result<()> {
     let conn = ak820_protocol::Connection::open_control()?;
+    if conn.info().protocol == ak820_protocol::device::DeviceProtocol::LegacyFeature {
+        let battery = conn.get_legacy_battery()?;
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "device": conn.info(), "battery": battery,
+                "firmware_version": null,
+                "capabilities": ak820_protocol::capabilities::DeviceCapabilities::for_protocol(conn.info().protocol),
+            }))?
+        );
+        return Ok(());
+    }
     let info = conn.get_device_info()?;
     if json {
         println!("{}", serde_json::to_string_pretty(&info)?);
@@ -430,6 +509,43 @@ fn cmd_game_mode_get(json: bool) -> Result<()> {
         println!("TFT display time: {}", gm.tft_display_time);
         println!("Stability mode:   {}", gm.stability_mode);
         println!("Auto calibration: {}", gm.auto_calibration);
+    }
+    Ok(())
+}
+
+fn cmd_tft_upload(
+    json: bool,
+    path: &std::path::Path,
+    fit: &str,
+    allow_legacy: bool,
+    dry_run: bool,
+) -> Result<()> {
+    use ak820_protocol::commands::tft_image::{animation_from_bytes, FitMode};
+    let bytes = std::fs::read(path).context("read image")?;
+    let anim = animation_from_bytes(&bytes, FitMode::parse_lenient(fit))?;
+    let legacy = ak820_protocol::legacy_tft::encode_animation(&anim)?;
+    let report = serde_json::json!({
+        "frames": anim.frames.len(), "width": 128, "height": 128,
+        "legacy_chunks": legacy.len() / 4096, "dry_run": dry_run,
+        "delays_ms": anim.frames.iter().map(|f| f.delay_ms).collect::<Vec<_>>(),
+    });
+    if !dry_run {
+        let tft = ak820_protocol::Connection::open_tft()?;
+        tft.upload_tft_animation_confirmed(&anim, allow_legacy)?;
+    }
+    if json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        println!(
+            "{} frame(s), 128×128, {} legacy chunks. {}",
+            anim.frames.len(),
+            legacy.len() / 4096,
+            if dry_run {
+                "Validated; no device opened or written."
+            } else {
+                "Transfer acknowledged; verify the TFT visually."
+            }
+        );
     }
     Ok(())
 }

@@ -5,7 +5,6 @@ import { Badge, Button, Card, ErrorBanner, KVList, Mono, hex4, prettyProduct } f
 import { PageHeader } from "../components/Layout";
 import { formatError } from "../errors";
 
-const CONTROL_USAGE_PAGE = 0xff68;
 
 export function Connect({ onReconnect }: { onReconnect?: () => void }) {
   const [devices, setDevices] = useState<DeviceInfo[] | null>(null);
@@ -19,7 +18,7 @@ export function Connect({ onReconnect }: { onReconnect?: () => void }) {
     try {
       const list = await invoke<DeviceInfo[]>("list_devices");
       setDevices(list);
-      if (list.some((d) => d.usage_page === CONTROL_USAGE_PAGE)) {
+      if (list.some((d) => d.is_control)) {
         setProbe(await invoke<ProbeReport>("probe_device"));
       } else {
         setProbe(null);
@@ -74,7 +73,7 @@ export function Connect({ onReconnect }: { onReconnect?: () => void }) {
                 { label: "HID interface", value: <Mono>{probe.interface}</Mono>, mono: true },
                 {
                   label: "Firmware",
-                  value: probe.firmware_version ? <Mono>{probe.firmware_version}</Mono> : <span className="text-fg-2">(read from System tab)</span>,
+                  value: probe.firmware_version ? <Mono>{probe.firmware_version}</Mono> : <span className="text-fg-2">{devices?.some((d) => d.is_control && d.protocol === "legacy_feature") ? "not reported by this firmware" : "(read from System tab)"}</span>,
                 },
               ]}
             />
@@ -100,7 +99,7 @@ export function Connect({ onReconnect }: { onReconnect?: () => void }) {
                 </thead>
                 <tbody>
                   {devices.map((d) => {
-                    const isControl = d.usage_page === CONTROL_USAGE_PAGE;
+                    const isControl = d.is_control;
                     return (
                       <tr
                         key={`${d.path}:${d.interface}:${d.usage_page}`}
@@ -116,7 +115,7 @@ export function Connect({ onReconnect }: { onReconnect?: () => void }) {
                           {isControl ? (
                             <Badge tone="accent">control</Badge>
                           ) : (
-                            <span className="text-xs text-fg-3">standard HID</span>
+                            <span className="text-xs text-fg-3">{d.is_tft ? "TFT upload" : "standard HID"}</span>
                           )}
                         </td>
                       </tr>

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves beta.
 
+## [Unreleased] — FF13 / USB 800A support
+
+- Detect SONiX AK820 USB 0C45:800A and separate its FF13 feature control / FF68
+  4096-byte TFT profile from web-output firmware. Open macOS HID non-exclusively.
+- Add opt-in legacy image/GIF uploads with exact descriptor guards, per-chunk
+  acknowledgements, shared transaction lock and a supervised writer process.
+- Add legacy lighting, local clock sync, four sleep settings and honest battery
+  status. Keep unknown onboard commands disabled and hide incompatible controls.
+- Add device-scoped Mac key remapping with backup/readback/undo and Mac keyboard
+  macros with focused recording, shortcuts, cancellation and Accessibility checks.
+- Prevent unsupported preset key-table writes before applying any preset settings;
+  avoid side-effect GIF rewrites on the verified legacy lighting path.
+- Document hardware evidence and remaining limitations in docs/MACOS-800A.md.
+
 ## [Unreleased]
 
 ### Added

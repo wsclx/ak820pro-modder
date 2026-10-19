@@ -1,4 +1,7 @@
 export interface DeviceInfo {
+  protocol: "web_output" | "legacy_feature";
+  is_control: boolean;
+  is_tft: boolean;
   vid: number;
   pid: number;
   interface: number;

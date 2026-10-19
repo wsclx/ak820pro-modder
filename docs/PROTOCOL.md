@@ -2,25 +2,35 @@
 
 Living document. Every decoded command lands here with byte layout, semantics, and a reference to the pcap capture it was derived from.
 
+## Firmware profiles
+
+The AK820 name covers incompatible HID protocols. The `AA/55` sections below
+apply to web-output firmware. An attached USB `0C45:800A`, SONiX AK820, USB
+release `0111` exposes FF13 control with 64-byte feature reports and FF68 TFT
+with 4096-byte output. This is supported by separate legacy transports; see
+[MACOS-800A.md](MACOS-800A.md) for exact packets, feature availability, safeguards
+and hardware evidence. USB release is not a firmware version. Commands must
+be selected by endpoint profile, not PID or OS alone.
+
 ## Transport
 
-- **USB-HID feature reports**, control interface = 3.
+- **USB-HID output reports** for the web profile (normally FF68 control / FF67 TFT); **feature reports** for FF13 control on the legacy profile.
 - **VID `0x0C45`** (Sonix Technology Co. Ltd.) — confirmed against the live device on macOS 2026-05-13. Earlier upstream notes that listed `0x8009` as the VID had it swapped with the PID.
 - Known PIDs:
   - `0x8009` — wired and 2.4 GHz dongle modes (shares HID stack)
-  - `0x800A`: alternate wired revision (listed as "AK820" in the AJAZZ device config; not hardware-verified by us)
+  - `0x800A`: alternate wired revision (listed as "AK820" in the AJAZZ device config); the family-B boards tested by adamauthor and vespovios use it. Requires the product name "AK820" because Sonix shares IDs
   - `0xFEFE` — Bluetooth 5.1 mode (separate HID stack, surfaces only when the BT side is paired and active)
-  - `0x7140` — ISP/bootloader mode (hidden pins under spacebar; do not poke without intent)
-- Live enumeration on a wired AK820 Pro returns **9 HID interfaces**: 6× iface 1 (standard keyboard / consumer / system-control endpoints), 1× iface 2 (control, usage page `0xFF68`), 1× iface 3 (TFT upload, usage page `0xFF67`), 1× iface 0. Newer revisions (e.g. ANSI boards on firmware 1.14, `bcdDevice 0x0114`) reportedly expose a `0xFF13` feature-report interface instead of `0xFF67` and don't answer the `0xAA`-framed protocol below; see [#8](https://github.com/wsclx/ak820pro-modder/issues/8).
+  - `0x7140` — ISP/bootloader mode (hidden pins under spacebar); excluded from `PRODUCT_IDS`, so the app never sends it control frames
+- Live enumeration on a wired family-A AK820 Pro returns **9 HID interfaces**: 6× iface 1 (standard keyboard / consumer / system-control endpoints), 1× iface 2 (control, usage page `0xFF68`), 1× iface 3 (TFT upload, usage page `0xFF67`), 1× iface 0. Family-B boards (e.g. ANSI on firmware 1.14, `bcdDevice 0x0114`, PID `0x800A` with product name "AK820") expose a `0xFF13` feature-report interface instead of `0xFF67`; their `0xFF68` carries 4096-byte TFT data. A device counts as family B when it has `0xFF13` and no `0xFF67`; see [MACOS-800A.md](MACOS-800A.md) and [#8](https://github.com/wsclx/ak820pro-modder/issues/8).
 - Report length: 64 bytes payload + 1 byte report ID (to be re-verified against captures).
 
 ## Known feature families
 
 | Family | Phase | Status | Source |
 |---|---|---|---|
-| Lighting (20 modes) | 1 | **Decoded** | online-driver (gohv was wrong on macOS) |
-| Sleep timer | 2 | Partially decoded | gohv (likely also wrong layout) |
-| Clock sync | 2 | Partially decoded | gohv (likely also wrong layout) |
+| Lighting (20 modes) | 1 | **Decoded** | online-driver (web); feature packets (legacy) |
+| Sleep timer | 2 | Partially decoded | gohv feature layout (legacy) |
+| Clock sync | 2 | Partially decoded | gohv feature layout (legacy) |
 | Battery status | 2 | **Decoded** (read) | online-driver (GET_DEVICE_INFO) |
 | Onboard profile switch | 2 | **Not decoded** | needs RE |
 | Keymap / layers | 3 | **Decoded** (read+write) | online-driver (GET_KEY / SET_KEY) |
@@ -28,9 +38,9 @@ Living document. Every decoded command lands here with byte layout, semantics, a
 | TFT display upload | 5 | **Decoded** | online-driver (SET_TFT_USER_ANIMATION) |
 | Now-playing / audio-reactive | 6 | Not applicable (host-side) | — |
 
-## Where the upstream Linux ports went wrong
+## Why the firmware profile matters
 
-Both `gohv/EPOMAKER-Ajazz-AK820-Pro` and `TaxMachine/ajazz-keyboard-software-linux` implement a fundamentally different wire format than the official AJAZZ online driver — and the upstream format is silently ignored by firmware 1.07 on macOS. Likely-wrong assumptions:
+The Linux ports implement a different wire format from the online driver. That feature-report format is valid for older FF13 boards on macOS, while firmware 1.07 web-output boards use AA/55 framing. The following comparison describes the web profile; it is not a universal correction to the legacy protocol:
 
 | Assumption | Reality |
 |---|---|

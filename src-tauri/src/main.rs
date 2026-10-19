@@ -2,5 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    ak820_protocol::legacy_tft::worker_entry();
     ak820pro_app_lib::run()
 }

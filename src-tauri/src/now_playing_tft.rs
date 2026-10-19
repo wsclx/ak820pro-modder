@@ -160,7 +160,7 @@ async fn upload_single_frame(frame: TftFrame) -> Result<(), AppError> {
     let anim = TftAnimation {
         frames: vec![frame],
     };
-    tft_io::upload(Arc::new(anim)).await.map(|_| ())
+    tft_io::upload(Arc::new(anim), false).await.map(|_| ())
 }
 
 /// Compose the 128×128 frame for the given Now-Playing snapshot.

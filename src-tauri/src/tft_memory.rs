@@ -18,6 +18,11 @@
 //! unnecessary. Re-test on hardware and delete it if the panel survives
 //! a Lighting change on its own.
 //!
+//! Family-B boards (`0xFF13`) are never restored: every upload there is
+//! a flash write, and their picture survives lighting changes (#12). The
+//! `apply_tft_*` commands don't remember family-B uploads, and the restore
+//! upload is refused by the protocol layer without user confirmation.
+//!
 //! ## What's tracked
 //!
 //! The already-built animation, so a restore never re-decodes a GIF or
@@ -90,7 +95,7 @@ impl TftMemory {
             let Some((label, anim)) = remembered else {
                 return;
             };
-            match tft_io::upload(anim).await {
+            match tft_io::upload(anim, false).await {
                 Ok(report) => {
                     tracing::info!(%label, ?report, "TFT re-applied after side-effecting command")
                 }

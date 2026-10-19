@@ -2,7 +2,7 @@
 //!
 //! Uploads come from four places: the preset picker, the image upload,
 //! the Now-Playing loop and the `TftMemory` restore. Each opens its own
-//! HID handle on the `0xFF67` interface, so without a shared lock two
+//! HID handle on the TFT interface (`0xFF67`, or `0xFF68` on family B), so without a shared lock two
 //! uploads can interleave their 4096-byte chunks on the wire and the
 //! firmware stores a mix of both. Everything TFT-related goes through
 //! [`TFT_LOCK`] here.
@@ -27,12 +27,16 @@ pub async fn lock() -> MutexGuard<'static, ()> {
 
 /// Upload `anim` on a fresh TFT handle, one upload at a time. The HID work
 /// runs on the blocking pool; with ack-paced chunks a GIF upload can take
-/// seconds.
-pub async fn upload(anim: Arc<TftAnimation>) -> Result<TftUploadReport, AppError> {
+/// seconds. Family-B boards are only written when `allow_legacy` carries
+/// the user's confirmation (see `Connection::upload_tft_animation_confirmed`).
+pub async fn upload(
+    anim: Arc<TftAnimation>,
+    allow_legacy: bool,
+) -> Result<TftUploadReport, AppError> {
     let _guard = lock().await;
     tokio::task::spawn_blocking(move || -> Result<TftUploadReport, AppError> {
         let tft = Connection::open_tft()?;
-        Ok(tft.upload_tft_animation(&anim)?)
+        Ok(tft.upload_tft_animation_confirmed(&anim, allow_legacy)?)
     })
     .await
     .map_err(|e| AppError::Protocol(format!("join TFT upload: {e}")))?
