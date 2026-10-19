@@ -108,6 +108,19 @@ pub fn validate(config: &Config) -> Result<(), String> {
         if !ids.insert(m.id) || m.name.trim().is_empty() || m.name.len() > 120 {
             return Err("Macro names and IDs must be valid and unique".into());
         }
+        if !m.shortcut.is_empty() {
+            let shortcut: tauri_plugin_global_shortcut::Shortcut = m
+                .shortcut
+                .parse()
+                .map_err(|e| format!("Invalid shortcut: {e}"))?;
+            if !shortcut.mods.intersects(
+                tauri_plugin_global_shortcut::Modifiers::CONTROL
+                    | tauri_plugin_global_shortcut::Modifiers::ALT
+                    | tauri_plugin_global_shortcut::Modifiers::SUPER,
+            ) {
+                return Err("Mac macro shortcuts need Control, Option or Command; ordinary typing keys cannot be global triggers".into());
+            }
+        }
         if !m.shortcut.is_empty() && !shortcuts.insert(m.shortcut.to_lowercase()) {
             return Err("Duplicate macro shortcut".into());
         }
@@ -566,6 +579,22 @@ mod tests {
             step("MetaLeft", false)
         ])
         .is_ok());
+    }
+    #[test]
+    fn global_triggers_cannot_capture_ordinary_typing() {
+        let mut config = Config {
+            macros: vec![HostMacro {
+                id: 1,
+                name: "Test".into(),
+                shortcut: "A".into(),
+                steps: vec![step("KeyA", true), step("KeyA", false)],
+            }],
+        };
+        assert!(validate(&config).is_err());
+        config.macros[0].shortcut = "Shift+A".into();
+        assert!(validate(&config).is_err());
+        config.macros[0].shortcut = "Control+Alt+M".into();
+        assert!(validate(&config).is_ok());
     }
     #[test]
     fn modifiers_are_released_and_letters_match_apple_keycodes() {
