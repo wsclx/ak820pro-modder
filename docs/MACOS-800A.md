@@ -36,7 +36,7 @@ is not used to infer firmware 1.11 or to enable commands.
 | Sleep timer | Never / 1 / 5 / 30 minutes, START/17/data | Five-minute setting sent; idle timeout and persistence not observed |
 | Battery | Query 20 01; FF preserved as wired/full sentinel | Actual FF reply; percentage/charging not invented |
 | Key remapping on Mac | Device-scoped hidutil, baseline backup, readback and undo | Temporary A→A and F24→F24 round trip restored initial mappings |
-| Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Validation tests; Accessibility needed for physical playback |
+| Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Six recorded key events survived app restart; manual playback typed фис in the app test field under Russian input |
 | Host automations / profile sync | Existing host paths | Original behavior retained |
 
 Onboard key/Fn tables, onboard macros, knob binding, per-key RGB, live audio RGB,
@@ -78,6 +78,12 @@ overlapping runs, and releases injected keys on cancellation. Manual playback
 has a three-second countdown; global shortcuts work from any keyboard and
 require the app to remain open. The active Mac input language determines the
 characters. Mouse actions and firmware-only Fn combinations are not emulated.
+After granting Accessibility, quit and reopen the app once: during testing, a
+running process saw the new AX permission but posted no text until restarted.
+Both Accessibility trust and event-posting access are checked before playback.
+Locally ad-hoc-signed development builds have a changing code identity; macOS
+may require permission again after rebuilding. No signing or TCC protection is
+weakened to avoid that check.
 
 ## Legacy GIF upload
 

@@ -10,7 +10,7 @@ type Remap = { source: number; destination: number };
 type Step = { code: string; down: boolean; delay_ms: number };
 type HostMacro = { id: number; name: string; shortcut: string; steps: Step[] };
 type Status = { accessibility: boolean; running: boolean };
-const INPUT = "rounded border border-line bg-surface px-3 py-2 text-sm text-fg-0";
+const INPUT = "rounded border border-line bg-surface-base px-3 py-2 text-sm text-fg-0";
 const USAGES = [...Array.from({ length: 112 }, (_, i) => i + 4), ...Array.from({ length: 8 }, (_, i) => i + 224)];
 
 export function HostKeymap() {
@@ -67,7 +67,8 @@ export function HostMacros() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [pending, setBusy] = useState(false);
+  const busy = pending || status?.running === true;
   const [dirty, setDirty] = useState(false);
   const held = useRef(new Set<string>());
   const last = useRef(0);
@@ -103,7 +104,8 @@ export function HostMacros() {
   return <div className="space-y-5">
     <PageHeader title="Keyboard macros on this Mac" description="Record key presses, releases and delays. Stored in the app; runs while the app is open." />
     <p className="text-sm text-fg-2">Playback types into the foreground app using your Mac input language. Shortcuts work from any keyboard on this Mac. Use a shortcut such as Control+Alt+M, or leave it blank and use Run. Release the shortcut keys before playback. Fn, mouse actions and onboard macro storage are unavailable in this fallback.</p>
-    <p className="text-sm text-fg-2">Accessibility: {status?.accessibility ? "allowed" : "required for playback — enable AK820 Pro Modder in System Settings → Privacy & Security → Accessibility"}. Recording listens only inside the box below.</p>
+    <p className="text-sm text-fg-2">Accessibility: {status?.accessibility ? "allowed" : "required for playback — enable AK820 Pro Modder in System Settings → Privacy & Security → Accessibility"}. After enabling Accessibility, quit and reopen the app once. Recording listens only inside the box below.</p>
+    {status?.running && <p role="status" className="text-sm text-fg-1">Macro playback is running. Stop playback cancels it.</p>}
     {error && <ErrorBanner>{error}</ErrorBanner>}
     {notice && <p role="status" className="text-sm text-fg-1">{notice}</p>}
     <Card title="Mac macro library">
@@ -116,8 +118,8 @@ export function HostMacros() {
         <Button variant="primary" disabled={busy || recording || !dirty} onClick={() => void save()}>Save library</Button>
       </div>
       {macro && <div className="space-y-3">
-        <label className="block text-sm">Name <input className={INPUT} disabled={busy || recording} value={macro.name} onChange={e => update({ name: e.target.value })} /></label>
-        <label className="block text-sm">Mac shortcut <input className={INPUT} disabled={busy || recording} placeholder="Control+Alt+M" value={macro.shortcut} onChange={e => update({ shortcut: e.target.value })} /></label>
+        <label className="block text-sm">Name <input type="text" className={INPUT} disabled={busy || recording} value={macro.name} onChange={e => update({ name: e.target.value })} /></label>
+        <label className="block text-sm">Mac shortcut <input type="text" className={INPUT} disabled={busy || recording} placeholder="Control+Alt+M" value={macro.shortcut} onChange={e => update({ shortcut: e.target.value })} /></label>
         <div ref={recorder} tabIndex={0} role="textbox" aria-label="Macro recording area" className="rounded border border-line p-5 outline-none focus:border-accent-400" onBlur={stopRecording} onKeyDown={e => {
           if (!recording) return; e.preventDefault(); e.stopPropagation();
           if (e.repeat || held.current.has(e.code)) return;

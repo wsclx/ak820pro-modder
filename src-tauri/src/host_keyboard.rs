@@ -427,6 +427,7 @@ mod native {
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn AXIsProcessTrusted() -> bool;
+        fn CGPreflightPostEventAccess() -> bool;
         fn CGEventCreateKeyboardEvent(source: *const c_void, key: u16, down: bool)
             -> *const c_void;
         fn CGEventSetFlags(event: *const c_void, flags: u64);
@@ -437,7 +438,7 @@ mod native {
         fn CFRelease(value: *const c_void);
     }
     pub fn trusted() -> bool {
-        unsafe { AXIsProcessTrusted() }
+        unsafe { AXIsProcessTrusted() && CGPreflightPostEventAccess() }
     }
     pub fn post(key: u16, down: bool, flags: u64) -> Result<(), String> {
         unsafe {
