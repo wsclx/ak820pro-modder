@@ -9,7 +9,7 @@
 //! +-------------------------------------+
 //! |  256-byte frame-delay header        |
 //! |    byte 0     = frame count N       |
-//! |    byte 1..N-1 = delay[i] * 5  (ms) |
+//! |    byte 1..N-1 = delay[i], 2-ms units |
 //! |    byte N     = 0x00 (terminator)   |
 //! |    byte N+1..255 = 0xFF (pad)       |
 //! +-------------------------------------+
@@ -48,10 +48,12 @@ pub const FRAME_HEADER_BYTES: usize = 256;
 /// ~30 on the AK820 Pro — clamp client-side before encode).
 pub const MAX_FRAMES: usize = 255;
 
-/// Per-frame delay multiplier. The driver stores delays in 5-ms units, so the
-/// real delay is `header[i] * 5` milliseconds; the longest representable
-/// per-frame delay is `255 * 5 = 1275 ms`.
-pub const DELAY_UNIT_MS: u16 = 5;
+/// Per-frame delay unit. The web driver writes `header[i] = delay * 5`, but
+/// its `delay` is the GIF delay in centiseconds, so one header unit is 2 ms
+/// (10 ms × 5). fromagge/ak820-screen measured this on firmware 1.16, and
+/// four family-B tools use the same unit (docs/research/2026-10-25-board-scan.md
+/// § 2.4). The longest representable per-frame delay is `255 * 2 = 510 ms`.
+pub const DELAY_UNIT_MS: u16 = 2;
 
 /// Bespoke 8-byte per-chunk header used by `SET_TFT_USER_ANIMATION`. This is
 /// **not** the same as `build_frame()` — TFT chunks have an explicit chunk
@@ -253,10 +255,10 @@ mod tests {
         let anim = TftAnimation { frames };
         let buf = anim.encode().expect("encode");
         assert_eq!(buf[0], 3, "frame count");
-        // delays[0] = 100 / 5 = 20
-        assert_eq!(buf[1], 20);
-        // delays[1] = 200 / 5 = 40
-        assert_eq!(buf[2], 40);
+        // delays[0] = 100 / 2 = 50
+        assert_eq!(buf[1], 50);
+        // delays[1] = 200 / 2 = 100
+        assert_eq!(buf[2], 100);
         // 3rd frame has no "next" transition → terminator at slot 3.
         // (Source supplied 1275 ms but it isn't emitted; that's how AJAZZ does it.)
         assert_eq!(buf[3], 0x00);
