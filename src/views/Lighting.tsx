@@ -29,7 +29,8 @@ export function Lighting() {
   const [autoApplyChoice, setAutoApply] = useState(true);
   // Family B saves every lighting write to flash: dragging a slider or the
   // colour picker would write dozens of times, so only Apply writes there.
-  const autoApply = autoApplyChoice && !legacy;
+  // Unknown counts as family B: caps is null while a board re-enumerates.
+  const autoApply = autoApplyChoice && caps?.protocol === "web_output";
   const [lastApplied, setLastApplied] = useState<string | null>(null);
 
   // Audio-reactive lighting (macOS only) — currently **alpha**: the

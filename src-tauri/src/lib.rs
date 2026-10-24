@@ -96,7 +96,15 @@ fn refresh_automation_shortcuts(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("on_shortcut({label}): {e}"))?;
         tracing::info!(automation_id, label, "registered global-shortcut marker");
     }
-    for m in host_keyboard::load(&app.path().app_data_dir().map_err(|e| e.to_string())?)?.macros {
+    let host = host_keyboard::load(&app.path().app_data_dir().map_err(|e| e.to_string())?)?;
+    // Builds before the modifier rule saved bare keys; registering "A" would
+    // swallow that key system-wide. Register none until the editor, which
+    // validates on save, has stored the macros again.
+    if let Err(e) = host_keyboard::validate(&host) {
+        tracing::warn!("Mac macro shortcuts not registered: {e}");
+        return Ok(());
+    }
+    for m in host.macros {
         if m.shortcut.trim().is_empty() {
             continue;
         }
@@ -830,14 +838,18 @@ async fn apply_preset(
 ) -> Result<ApplyPresetReport, AppError> {
     let preset =
         presets::find(&id).ok_or_else(|| AppError::Protocol(format!("preset '{id}' not found")))?;
-    let capabilities = get_capabilities()?;
-    if (options.keymap && !capabilities.keymap && !preset.keymap_overrides.is_empty())
-        || (options.fn_keymap && !capabilities.fn_keymap && !preset.fn_keymap_overrides.is_empty())
-    {
-        return Err(AppError::Protocol(
-            "Onboard key remapping is not decoded for this firmware; no preset changes were sent"
-                .into(),
-        ));
+    let keymap = options.keymap && !preset.keymap_overrides.is_empty();
+    let fn_keymap = options.fn_keymap && !preset.fn_keymap_overrides.is_empty();
+    // Only key overrides need to know the board; automation seeds also apply
+    // with no keyboard attached.
+    if keymap || fn_keymap {
+        let capabilities = get_capabilities()?;
+        if (keymap && !capabilities.keymap) || (fn_keymap && !capabilities.fn_keymap) {
+            return Err(AppError::Protocol(
+                "Onboard key remapping is not decoded for this firmware; no preset changes were sent"
+                    .into(),
+            ));
+        }
     }
     let mut report = ApplyPresetReport::default();
 

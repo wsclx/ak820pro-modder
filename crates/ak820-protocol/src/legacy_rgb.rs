@@ -3,7 +3,7 @@
 //! Common UI slots are translated to this revision's one-based LED matrix.
 //! Ported from vespovios/ak820pro-modder@017c18b; verified there on an ANSI
 //! 0C45:800A (WASD + E). The slot table is ANSI-only.
-use crate::legacy::{control_packet, exchange, transaction, Send, TransactionLock};
+use crate::legacy::{control_packet, exchange, transaction_with_flag, Send, TransactionLock};
 use crate::{
     commands::per_key_rgb::{CustomLedMap, LED_COUNT},
     Error, Result,
@@ -147,13 +147,19 @@ pub(crate) fn write_bank(device: &HidDevice, pid: u16, map: &CustomLedMap) -> Re
 }
 
 fn select_with(send: &mut Send, mode: [u8; 64]) -> Result<()> {
-    transaction(send, control_packet(0x13, 0, 1), &mut std::iter::once(mode))
+    transaction_with_flag(
+        send,
+        0,
+        control_packet(0x13, 0, 1),
+        &mut std::iter::once(mode),
+    )
 }
 
 /// Nine raw 64-byte blocks; their replies echo colour bytes only.
 fn bank_with(send: &mut Send, data: &[u8; 576]) -> Result<()> {
-    transaction(
+    transaction_with_flag(
         send,
+        0,
         control_packet(0x23, 0, 9),
         &mut data.chunks_exact(64).map(|b| b.try_into().unwrap()),
     )
@@ -208,10 +214,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(packets.len(), 5);
+        assert_eq!(packets[0], control_packet(0x18, 0, 0));
         assert_eq!(packets[1], control_packet(0x13, 0, 1));
         assert_eq!((packets[2][0], packets[2][9]), (0x80, 5));
         assert_eq!(packets[3], control_packet(2, 0, 0));
-        assert_eq!(packets[4], control_packet(0xf0, 0, 1));
+        assert_eq!(packets[4], control_packet(0xf0, 0, 0));
 
         let data = encode(&CustomLedMap::default()).unwrap();
         let mut packets = Vec::new();
@@ -224,6 +231,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(packets.len(), 13);
+        assert_eq!(packets[0], control_packet(0x18, 0, 0));
         assert_eq!(packets[1], control_packet(0x23, 0, 9));
         let body: Vec<_> = packets[2..11]
             .iter()
@@ -231,7 +239,7 @@ mod tests {
             .collect();
         assert_eq!(body, data);
         assert_eq!(packets[11], control_packet(2, 0, 0));
-        assert_eq!(packets[12], control_packet(0xf0, 0, 1));
+        assert_eq!(packets[12], control_packet(0xf0, 0, 0));
     }
 
     #[test]
@@ -255,7 +263,7 @@ mod tests {
             &data,
         );
         assert!(result.is_err());
-        assert_eq!(packets.last().unwrap(), &control_packet(0xf0, 0, 1));
+        assert_eq!(packets.last().unwrap(), &control_packet(0xf0, 0, 0));
         assert!(!packets.contains(&control_packet(2, 0, 0)));
     }
 }

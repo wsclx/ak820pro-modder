@@ -167,11 +167,8 @@ const START_RETRY_DELAY: Duration = Duration::from_millis(300);
 
 pub(crate) type Send<'a> = dyn FnMut(&[u8; 64]) -> Result<[u8; 64]> + 'a;
 
-fn start(send: &mut Send) -> Result<()> {
-    start_with_flag(send, 1)
-}
-
-/// The image upload opens its session with flag 0, settings with flag 1.
+/// The image upload and per-key RGB open their sessions with flag 0,
+/// settings with flag 1.
 pub(crate) fn start_with_flag(send: &mut Send, flag: u16) -> Result<()> {
     for _ in 1..START_ATTEMPTS {
         let reply = send(&control_packet(START, 0, flag))?;
@@ -195,15 +192,27 @@ pub(crate) fn transaction(
     command: [u8; 64],
     data: &mut dyn Iterator<Item = [u8; 64]>,
 ) -> Result<()> {
+    transaction_with_flag(send, 1, command, data)
+}
+
+/// [`transaction`] with the START/FINISH flag chosen by the caller. Settings
+/// use 1 (adamauthor, hardware-tested); the per-key RGB sessions use 0, the
+/// only flag verified for them (vespovios, `docs/PER-KEY-RGB.md`).
+pub(crate) fn transaction_with_flag(
+    send: &mut Send,
+    flag: u16,
+    command: [u8; 64],
+    data: &mut dyn Iterator<Item = [u8; 64]>,
+) -> Result<()> {
     let result = (|| {
-        start(send)?;
+        start_with_flag(send, flag)?;
         validate_ack(&send(&command)?, command[1])?;
         for packet in data {
             send(&packet)?;
         }
         validate_ack(&send(&control_packet(COMMIT, 0, 0))?, COMMIT)
     })();
-    let finished = send(&control_packet(FINISH, 0, 1)).and_then(|r| validate_ack(&r, FINISH));
+    let finished = send(&control_packet(FINISH, 0, flag)).and_then(|r| validate_ack(&r, FINISH));
     result.and(finished)
 }
 

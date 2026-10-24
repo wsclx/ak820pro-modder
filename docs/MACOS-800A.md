@@ -179,9 +179,11 @@ automatic TFT restore, no Now-Playing or audio-reactive streaming.
 
 The image upload checks every command status, waits for a busy START the
 same way, and sends END after a failed transfer. The cross-process
-transaction lock now waits up to 12 s (a 49-block upload takes about 8 s)
-instead of failing at once, so a lighting change during an upload is
-applied after it rather than dropped.
+transaction lock now waits up to 12 s instead of failing at once. A
+lighting change during an upload of up to about 70 blocks (a 49-block
+upload takes about 8 s) is applied after it; during a longer upload, such
+as a 30-frame GIF of about 240 blocks (roughly 40 s), it fails with
+"Another keyboard operation is running" and nothing is written.
 
 ## Validation on the attached keyboard
 

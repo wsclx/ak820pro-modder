@@ -134,6 +134,20 @@ pub fn select_control(candidates: &[DeviceInfo]) -> Option<&DeviceInfo> {
 /// or [`CONTROL_INTERFACE`] when none matches; TFT on `0xFF67`). Requiring
 /// the missing `0xFF67` keeps a family-A board on its protocol even if it
 /// also exposes `0xFF13`, which is unverified.
+fn is_ak820_product(product: Option<&str>) -> bool {
+    product.is_some_and(|p| p.to_ascii_uppercase().starts_with("AK820"))
+}
+
+/// Family B is recognised by usage pages alone, and Sonix reuses its IDs
+/// for unrelated keyboards (the AULA EA75MAX also reports `0C45:800A`).
+/// The feature-report path writes to flash, so only a device with an
+/// observed AK820 product name may take it, whatever its PID.
+fn drop_unverified_family_b(found: &mut Vec<DeviceInfo>) {
+    found.retain(|d| {
+        d.protocol != DeviceProtocol::LegacyFeature || is_ak820_product(d.product.as_deref())
+    });
+}
+
 fn classify_candidates(found: &mut [DeviceInfo]) {
     let key = |d: &DeviceInfo| (d.pid, d.product.clone());
     let has_page = |k: &(u16, Option<String>), page: u16| {
@@ -354,11 +368,7 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
         }
         // Sonix IDs are shared by unrelated keyboards. Require the observed
         // AK820 product name for the newly supported PID.
-        if d.product_id() == 0x800A
-            && !d
-                .product_string()
-                .is_some_and(|p| p.to_ascii_uppercase().starts_with("AK820"))
-        {
+        if d.product_id() == 0x800A && !is_ak820_product(d.product_string()) {
             continue;
         }
         let info = DeviceInfo {
@@ -380,6 +390,7 @@ pub fn enumerate() -> Result<Vec<DeviceInfo>> {
         found.push(info);
     }
     classify_candidates(&mut found);
+    drop_unverified_family_b(&mut found);
     info!(count = found.len(), "enumerated AK820 candidates");
     Ok(found)
 }
@@ -1124,6 +1135,36 @@ mod tests {
     fn classified<const N: usize>(mut devices: [DeviceInfo; N]) -> [DeviceInfo; N] {
         classify_candidates(&mut devices);
         devices
+    }
+
+    #[test]
+    fn family_b_needs_an_ak820_product_name() {
+        let named = |mut d: DeviceInfo, product: &str| {
+            d.product = Some(product.into());
+            d
+        };
+        let mut devices = classified([
+            named(iface(2, 0xFF68), "AK820"),
+            named(iface(3, 0xFF13), "AK820"),
+        ])
+        .to_vec();
+        drop_unverified_family_b(&mut devices);
+        assert_eq!(devices.len(), 2);
+
+        // Same pages under another name (or none): no family-B writes.
+        for product in [Some("EA75MAX"), None] {
+            let mut a = iface(2, 0xFF68);
+            let mut b = iface(3, 0xFF13);
+            (a.product, b.product) = (product.map(Into::into), product.map(Into::into));
+            let mut devices = classified([a, b]).to_vec();
+            drop_unverified_family_b(&mut devices);
+            assert!(devices.is_empty());
+        }
+
+        // Family A is never filtered by name.
+        let mut devices = classified([iface(2, 0xFF68), iface(3, 0xFF67)]).to_vec();
+        drop_unverified_family_b(&mut devices);
+        assert_eq!(devices.len(), 2);
     }
 
     #[test]

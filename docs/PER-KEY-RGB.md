@@ -8,10 +8,10 @@
 > describe vespovios' app. This repository has none of that: its paint view
 > starts black (no read-back, no local `feature-rgb.json`), writes only on
 > Apply, and has no colour profiles or profile shortcut. The RGB sessions
-> here send START and END with flag 1 instead of 0 (adamauthor's shared
-> transaction since his 0.9.6; whether the RGB sessions were re-tested on
-> hardware with flag 1 is not documented), and wait 35 ms before and 50 ms
-> after each write instead of 35 ms each.
+> here send START and FINISH with flag 0 as verified below; the other
+> settings use flag 1 (adamauthor's shared transaction since his 0.9.6,
+> never tested with the RGB sessions). Each write waits 35 ms before and
+> 50 ms after instead of 35 ms each.
 
 Verified on the user's wired `0C45:800A` keyboard on 2026-10-23. The user
 confirmed W red, A green, S blue and D yellow against a purple background.

@@ -41,7 +41,8 @@ const APPLY_DEBOUNCE_MS = 120;
 
 export function CustomLightingPaint({ inheritedConfig }: Props) {
   const { layout } = useLayout();
-  const legacy = useCapabilities()?.protocol === "legacy_feature";
+  const protocol = useCapabilities()?.protocol;
+  const legacy = protocol === "legacy_feature";
   const layoutRows = layout.rows;
   const [remote, setRemote] = useState<CustomLedMap | null>(null);
   const [draft, setDraft] = useState<LedColor[]>(() => emptyMap());
@@ -52,15 +53,14 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
   const [lastApplied, setLastApplied] = useState<string | null>(null);
   const [autoApplyChoice, setAutoApply] = useState(true);
   // Family B saves every colour-bank write to flash: paint first, then Apply.
-  const autoApply = autoApplyChoice && !legacy;
+  // Unknown counts as family B: the protocol is null while a board
+  // re-enumerates.
+  const autoApply = autoApplyChoice && protocol === "web_output";
 
   const inflight = useRef(false);
   const queued = useRef<LedColor[] | null>(null);
   const pending = useRef<number | null>(null);
   const initRef = useRef(false);
-  // Family B keeps rendering the bank once in custom mode, so later writes
-  // skip the mode switch (one flash write instead of two).
-  const modeSelected = useRef(false);
 
   /* ----- IO ---------------------------------------------------------- */
 
@@ -96,13 +96,12 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
       try {
         // 1. write the per-key buffer
         await invoke("set_custom_led", { map: { leds: map } });
-        // 2. flip the firmware to render from it
-        if (!legacy || !modeSelected.current) {
-          await invoke("apply_lighting", {
-            config: { ...inheritedConfig, mode: "custom" } satisfies LightingConfig,
-          });
-          modeSelected.current = true;
-        }
+        // 2. flip the firmware to render from it. Every time, on family B
+        // too: the effect may have been changed with Fn on the keyboard,
+        // and the app can't read the active mode back there.
+        await invoke("apply_lighting", {
+          config: { ...inheritedConfig, mode: "custom" } satisfies LightingConfig,
+        });
         setRemote({ leds: map });
         setLastApplied(new Date().toLocaleTimeString());
       } catch (e) {
@@ -115,7 +114,7 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
         if (drain) void apply(drain);
       }
     },
-    [inheritedConfig, legacy],
+    [inheritedConfig],
   );
 
   function scheduleApply(map: LedColor[]) {
