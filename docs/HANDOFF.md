@@ -692,8 +692,8 @@ are in `docs/research/2026-10-25-board-scan.md`.
 ### Needs a hardware test
 - Does `SET_CUSTOM_LED_DATA` (36) persist across a power cycle on family A?
   If so, audio-reactive streaming and #11 wear the flash.
-- TFT frame-delay unit: five sources say 2 ms per unit, `tft.rs` uses 5 ms.
-  Stopwatch test with a known GIF.
+- TFT frame-delay unit: switched to 2 ms per unit (five sources, one measured
+  on firmware 1.16). Confirm with a stopwatch and a known GIF on 1.07.
 - TFT flow control and clock sync from #10 on firmware 1.07.
 - Whether Mario's board exposes `0xFF13` at all (`ak820 list`).
 - Display artefacts #1 (upper half only) and #2 (noise lines).

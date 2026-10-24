@@ -146,7 +146,7 @@ output.
 ## Known issues
 
 - On our test board the display showed a preset only in its upper half ([#1](https://github.com/wsclx/ak820pro-modder/issues/1)), and some animations show horizontal noise lines ([#2](https://github.com/wsclx/ak820pro-modder/issues/2)). Since [#10](https://github.com/wsclx/ak820pro-modder/pull/10), uploads wait for the keyboard to acknowledge each chunk, which may fix #2; this hasn't been confirmed on hardware.
-- GIF frame timing may be off: several community projects use 2 ms per unit where we use 5 ms. A stopwatch test on hardware is pending.
+- GIF frame delays are now sent in 2-ms units, as measured by other projects; earlier builds used 5 ms and played GIFs too fast. A stopwatch check on firmware 1.07 is still open.
 - iCloud sync covers the automations library only, not per-key colours or settings.
 - No Windows or Linux builds.
 
