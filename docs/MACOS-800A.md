@@ -39,7 +39,7 @@ is not used to infer firmware 1.11 or to enable commands.
 | Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Six recorded key events survived app restart; manual playback typed фис under Russian input; owner confirmed the global shortcut; Stop cancelled before input |
 | Host automations / profile sync | Existing host paths | Original behavior retained |
 
-Onboard key/Fn tables, onboard macros, knob binding, per-key RGB, live audio RGB,
+Onboard key/Fn tables, onboard macros, knob binding, live audio RGB,
 factory TFT selection and live Now Playing TFT are not decoded for FF13.
 The UI explains these limits and avoids unsupported writes. The Mac fallbacks
 are explicitly labeled and never present their state as onboard configuration.
@@ -94,7 +94,7 @@ The GUI asks before sending; the CLI requires `--allow-legacy`.
 
 The older path uses 65-byte hidapi feature buffers: report ID 0, then the
 full 64-byte packet beginning 04. It uses START (04 18), image configuration
-(04 72 03, chunk count in bytes 8-9 of the packet), 4096-byte raw output
+(04 72 01, chunk count in bytes 8-9 of the packet), 4096-byte raw output
 chunks, then SAVE (04 02). Each feature command is followed by a delay and
 feature read. Each data chunk requires an input acknowledgement before
 continuing; a missing acknowledgement stops the transfer without SAVE.
@@ -106,6 +106,28 @@ by the legacy writer. It runs in a supervised child process because macOS
 synchronous HID writes may block. Timeout terminates that process; there
 are no automatic retries, firmware operations, resets or recovery writes.
 Uploads are limited to 30 frames pending further device-capacity evidence.
+
+Byte 2 of the image configuration is the one-based destination slot, not a
+transport variant (vendor ANSI driver V1.0.0.5 sends the selected LCD entry
+plus one; its layout declares one GIF slot). Earlier builds sent slot 3,
+which was acknowledged and played on this keyboard. On another ANSI 800A,
+slot 3 showed a static image only briefly among other animation content and
+slot 1 kept it; see vespovios/ak820pro-modder@3264608 and its
+docs/COMPATIBILITY.md. Slot 1 still needs to be confirmed on this keyboard.
+
+## Legacy per-key RGB
+
+Ported from vespovios/ak820pro-modder (docs/PER-KEY-RGB.md there). Two
+feature sessions: START (04 18), lighting (04 13 flag 1), mode packet
+`80` with brightness 0-5 in byte 9 and `AA 55` at bytes 14-15, SAVE (04 02),
+END (04 F0); then START, 04 23 flag 9, nine unframed 64-byte blocks of the
+576-byte colour bank (`[index, R, G, B]` at index × 4, `AA 55` in the last
+two bytes), SAVE and END. Command replies must carry status 1 in byte 3;
+data replies echo colour bytes and are not checked. END is always sent, and
+a failed bank is never saved. The slot table is ANSI only and was verified
+there with WASD and E; ISO keys are not mapped. The CLI exposes it as
+`rgb fill` / `rgb rainbow` on this firmware. Each write commits, so it is
+not used for streaming effects.
 
 ## Validation on the attached keyboard
 

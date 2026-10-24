@@ -9,6 +9,7 @@ pub mod commands;
 pub mod device;
 pub mod error;
 pub mod legacy;
+pub mod legacy_rgb;
 pub mod legacy_tft;
 pub mod protocol;
 

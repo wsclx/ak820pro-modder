@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased] — FF13 / USB 800A support
 
+- TFT uploads on FF13 firmware target custom slot 1 (`04 72 01`) instead of
+  slot 3, after vespovios/ak820pro-modder@3264608: on another ANSI 800A,
+  slot 3 showed a static image only briefly among other animation.
+- Per-key RGB on FF13 firmware (ANSI layout): `ak820 rgb fill` and
+  `ak820 rgb rainbow` write the 576-byte colour bank in two acknowledged
+  sessions. Protocol and slot table ported from vespovios/ak820pro-modder.
+
 - Detect SONiX AK820 USB 0C45:800A and separate its FF13 feature control / FF68
   4096-byte TFT profile from web-output firmware. Open macOS HID non-exclusively.
 - Add opt-in legacy image/GIF uploads with exact descriptor guards, per-chunk

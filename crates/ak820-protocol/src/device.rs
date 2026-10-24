@@ -1027,6 +1027,18 @@ impl Connection {
         self.set_many_at(cmd::SET_CUSTOM_LED_DATA, 0, &payload, true)
     }
 
+    /// Write the ANSI per-key colour bank on feature-report firmware and
+    /// switch to custom mode 80. Each call commits to the keyboard, so it is
+    /// for one-off writes, not streaming effects.
+    pub fn set_feature_custom_lighting(&self, map: &CustomLedMap, brightness: u8) -> Result<()> {
+        if self.info.protocol != DeviceProtocol::LegacyFeature {
+            return Err(Error::NotImplemented(
+                "Feature custom RGB on an output-report keyboard",
+            ));
+        }
+        crate::legacy_rgb::apply(&self.device, self.info.pid, map, brightness)
+    }
+
     /// Read the older firmware's battery status without synthesizing modern fields.
     pub fn get_legacy_battery(&self) -> Result<crate::legacy::BatteryStatus> {
         if self.info.protocol != DeviceProtocol::LegacyFeature {
