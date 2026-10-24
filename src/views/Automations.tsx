@@ -20,7 +20,7 @@ import type {
   SyncReport,
 } from "../types";
 import { formatError } from "../errors";
-import { ICLOUD_SYNC_ENABLED_KEY } from "../components/SyncCard";
+import { ICLOUD_SYNC_ENABLED_KEY, startupSync } from "../components/SyncCard";
 
 const KIND_LABEL: Record<AutomationKind, string> = {
   apple_script: "AppleScript",
@@ -112,6 +112,10 @@ export function Automations() {
     setBusy(true);
     setErr(null);
     try {
+      // The app-start sync is the only writer that can land between these
+      // two calls (the post-save sync below is awaited; "Sync now" and
+      // marker assignment live in other views), so let it finish first.
+      await startupSync;
       const next = change(await invoke<Automation[]>("list_automations"));
       await invoke("save_automations", { list: next });
       setItems(next);

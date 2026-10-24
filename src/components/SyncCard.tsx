@@ -26,6 +26,22 @@ import type { Automation, SyncReport, SyncStatus } from "../types";
 
 export const ICLOUD_SYNC_ENABLED_KEY = "ak820:icloud-sync-enabled";
 
+/**
+ * Settles once the app-start sync in `App.tsx` is done, never rejects.
+ * `persist()` in the Automations view waits for it: that sync may write
+ * the local library between the view's `list_automations` and its
+ * `save_automations`, and the backend would then record the entries it
+ * just merged in as deleted.
+ */
+export let startupSync: Promise<void> = Promise.resolve();
+
+export function trackStartupSync(p: Promise<unknown>) {
+  startupSync = p.then(
+    () => undefined,
+    () => undefined,
+  );
+}
+
 function readEnabled(): boolean {
   try {
     return window.localStorage.getItem(ICLOUD_SYNC_ENABLED_KEY) === "true";
