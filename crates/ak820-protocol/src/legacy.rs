@@ -33,7 +33,7 @@ impl TransactionLock {
         // Wait for a short write or an image upload in another process
         // (TFT worker, CLI) instead of dropping this operation.
         let deadline = std::time::Instant::now() + LOCK_WAIT;
-        while fs2::FileExt::try_lock_exclusive(&file).is_err() {
+        while file.try_lock().is_err() {
             if std::time::Instant::now() >= deadline {
                 return Err(Error::UnexpectedResponse(
                     "Another keyboard operation is running; wait for it to finish".into(),
