@@ -7,15 +7,11 @@ Read this start-to-finish before touching code.
 
 ## 1. Vision
 
-Build the **definitive macOS-first control software for the Epomaker /
-Ajazz AK820 Pro mechanical keyboard**. The official AJAZZ tool is
-Windows-only, ugly, and limited. We want a fast, beautiful, Tauri-based
-app that surpasses it on every axis (visual design, feature coverage,
-reliability, cross-platform support).
-
-Stretch goals (Phase 6): things the official tool can't do — audio-
-reactive lighting, now-playing on the TFT, AppleScript bridge, iCloud
-profile sync.
+A macOS control app for the Epomaker / Ajazz AK820 Pro that covers what
+the vendor's Windows and web tools do (lighting, per-key colours, key
+map, macros, display) and adds Mac-side features they lack: AppleScript
+and Shortcuts automations bound to keys, Now Playing on the display,
+audio-reactive lighting, iCloud sync of the automations library.
 
 ---
 
@@ -29,7 +25,7 @@ profile sync.
 | Flash | PY25Q128HA 16 MB SPI | same |
 | TFT | NFP085B-10AF, 128×128, **GC9107** over SPI | same |
 | USB VID | **0x0C45** (Sonix Technology Co. Ltd.) | live IOHIDDevice enumeration |
-| USB PID | **0x8009** (USB / 2.4 GHz mode), `0xFEFE` (Bluetooth), `0x7140` (ISP/bootloader) | live enumeration |
+| USB PID | **0x8009** (USB / 2.4 GHz mode), `0x800A` (another wired revision, mostly family B), `0xFEFE` (Bluetooth), `0x7140` (ISP/bootloader, deliberately not in `PRODUCT_IDS`) | live enumeration, community reports |
 | Macro space | **3072 bytes** (device reports), 512 hardcoded fallback in AJAZZ tool | GET_DEVICE_INFO |
 | TFT capacity | 255 frames | GET_DEVICE_INFO |
 
@@ -43,12 +39,13 @@ control commands is:
   silently drops writes)
 - **Path**: e.g. `DevSrvsID:4295011008`
 
-Detection rule (see `crates/ak820-protocol/src/device.rs` and
-`src-tauri/src/lib.rs`):
-
-```rust
-candidates.iter().find(|d| d.usage_page == 0xFF68)
-```
+This describes family A. Family-B boards (`0xFF13` present, `0xFF67`
+absent, product name starting with "AK820") use `0xFF13` feature reports
+for control and `0xFF68` for display data; see `docs/MACOS-800A.md`.
+Detection is in `classify_candidates()` and `select_control()` in
+`crates/ak820-protocol/src/device.rs`: family A walks the usage-page
+priority list (`0xFF68` first), not the enumeration order, which macOS
+doesn't keep stable (#8).
 
 ---
 
@@ -309,23 +306,20 @@ ak820pro-modder/
 | 3 — Keymap edit | ✅ done | Click-to-select, action picker (letters, digits, F-keys, editing, navigation, modifiers, media, factory-default), Factory Default button (cmd 31 / 28), dirty-state badge, save+verify, discard | tested with Caps→F12 round-trip |
 | 4 — Macros | ✅ done | Two-phase encoded write (cmd 21/37), recorder UI, ActionCatalog group, ISO-DE keyboard binding | wire flags inverted-looking — see § 6.8 |
 | 5a — Per-key RGB | ✅ done | `SET_CUSTOM_LED_DATA` (cmd 36), 128-LED × 4 B buffer, `Mode::Custom = 0x80`, click-to-paint UI in Lighting view | CLI hardware-verified |
-| 5b — TFT display | 🟡 protocol-only | `SET_TFT_USER_ANIMATION` (cmd 80), 4104-byte chunks on iface 3 (0xFF67), bespoke 8-byte chunk header, RGB565 LE pixels, CLI `tft solid/cycle` writes | upload reaches device but display still shows default animation — pending USB pcap of the official Windows tool for the activation sequence |
+| 5b — TFT display | ✅ done | `SET_TFT_USER_ANIMATION` (cmd 80), 4104-byte chunks on iface 3 (0xFF67), 8-byte chunk header, RGB565 LE pixels, CLI `tft solid/cycle` | uploads display since the `0x0650` magic fix (§ 6.9h). Since #10 each upload probes for the cmd-65 ack and falls back to pacing; not yet tested on hardware |
 | 5c — TFT presets | 🧪 beta | `tft_presets` module with 12 generated animations (2 diagnostic + 10 decorative). `apply_tft_preset` + `list_tft_presets` Tauri commands. TFT view replaces the "coming soon" placeholder. | first build of the diagnostic Quadrants preset showed only the top half active — root cause TBD, may be a different chunk-header byte or a pixel-stride issue; the web driver confirms AK820 = 128×128 in `tftConfig` |
 | 5d — TFT image upload | 🧪 beta | `tft_image` module decodes PNG / JPEG / GIF via `image` crate, fits via Fill/Contain/Stretch, quantises to RGB565, hands to the chunked uploader. Tauri command `apply_tft_image(path, fit)`. Native file picker via `tauri-plugin-dialog`. Factory-default button via `tft_factory_default` → `SET_TFT_BUILT_IN_INDEX(0)`. | MP4 / video deferred — would more than double the binary; users decimate to GIF first |
-| 5e — Live TFT presets | ⏳ pending | — | needs a polling architecture + bitmap-font rasteriser to render Battery / Volume / CPU / Clock onto the panel without uploading user pre-rendered images. Mario flagged 10 functional presets as desirable; tracked but not built yet |
+| 5e — Live TFT presets | 🟡 part 1 | Now Playing on the TFT (`now_playing_tft.rs`, `tft_text.rs`): 2 s polling, text rendered on the host with `embedded-graphics` | Battery / Volume / CPU / Clock presets still open (#6). The stock clock page is set via cmd 52 (`tft_sync_clock`, #10), untested on hardware |
 | 6a — Now-Playing reader | ✅ done | JXA probe of Music.app + Spotify desktop every 2 s, surfaced in System view | Phase-6 preview for the TFT pipeline |
 | 6b — Automations engine | ✅ done | AppleScript / Shortcut / Shell library with 15 curated starters, persistence to `$APP_DATA/automations.json`, run-with-output panel, keyboard-side triggers via F13–F24 markers (Carbon RegisterEventHotKey via `tauri-plugin-global-shortcut`) | up to 12 keyboard-bindable automations at once |
 | 6c — Cross-cutting presets | ✅ done | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle, additive apply with per-component opt-in | sparse keymap overrides + automation seeds resolved against starter library |
 | 6d — Audio-reactive lighting | 🧪 alpha | `crates/ak820-audio-reactive` — ScreenCaptureKit (`macos_13_0`) + `realfft` 3.5 → bass/mids/highs → 3-zone Spectrum preset on the per-key grid. Two-stage Alpha unlock in Lighting view (Locked/Unlocked + Streaming Off/On), `localStorage`-persisted. CLI smoke probe `ak820 audio meter`. | Real-music smoothness still flickery — wire-level cadence of `set_custom_led` (10 HID chunks per frame) saturates the firmware pipeline at ~15 fps. Frame deduplication kills the silence-flicker; faster-than-15-fps needs a protocol-layer change (skip per-chunk `read_response` in `set_many_at`). |
-| 6e — Now-playing on TFT | ⏳ pending | — | gated on Phase 5b activation sequence |
+| 6e — Now-playing on TFT | ✅ done | see 5e part 1 | |
+| Family B (`0xFF13`) | 🧪 beta | lighting, per-key RGB (ANSI), clock, sleep, battery, image/GIF upload after confirmation, Mac-side remapping and macros; ported from #12 and the adamauthor / vespovios forks (#14) | tested by those contributors on their boards, not on this build. Every write is stored in flash: no auto-apply, no automatic TFT restore, no streaming |
 | 6f — iCloud profile sync | 🧪 beta | `src-tauri/src/icloud_sync.rs` — detects `$HOME/Library/Mobile Documents/com~apple~CloudDocs/` and merges `ak820pro-modder/automations.json` per automation `id`: three-way against a per-Mac base (`icloud-sync-base.json`), tombstones in `automations-tombstones.json` (180-day TTL), conflicts resolved by hand in the SyncCard, `*.json.bak` before every overwrite. iCloud file stays a plain array for older app versions. Tauri commands `icloud_sync_status/_push/_pull` (push = pull = merge; pull takes `resolve`). App-mount auto-sync, save-hook auto-sync. Hermetic unit tests inject the iCloud root and clock. | Custom-LED snapshots + settings sync are 0.7.x follow-ups. |
 
 ### Open visual TODOs
 
-- ISO-Enter L-shape (currently rendered as a normal 1.5u key)
-- Per-key RGB editor (the 128-LED `customLedData` from JSON / `SET_CUSTOM_LED_DATA` 36)
-- Wheel/knob configurable actions (online driver has a `wheelKeys`
-  structure — needs separate decoding)
 - Real LED indicators (Caps, Win-Lock, Battery) instead of static dots
 
 ---
@@ -676,68 +670,52 @@ between).
 
 ## 8. Tauri IPC Commands (frontend ↔ backend)
 
-| Command | Args | Returns | Notes |
-|---|---|---|---|
-| `list_devices` | — | `DeviceInfo[]` | full HID enumeration |
-| `probe_device` | — | `ProbeReport` | **read-only**, no mutex |
-| `force_reconnect` | — | — | drops cached Connection |
-| `list_lighting_modes` | — | `LightingModeInfo[]` | static |
-| `apply_lighting` | `{ config: LightingConfig }` | — | retries once on stale handle |
-| `get_device_info` | — | `DeviceInfoReport` | grabs ConnState mutex |
-| `get_game_mode` | — | `GameMode` | grabs ConnState mutex |
-| `set_game_mode` | `{ mode: GameMode }` | — | grabs ConnState mutex |
-| `list_sleep_presets` | — | `SleepPreset[]` | static |
-| `get_keymap` | — | `Keymap` | multi-packet GET_KEY |
-| `get_fn_keymap` | — | `Keymap` | multi-packet GET_FN_KEY |
-| `set_keymap` | `{ keymap: Keymap }` | — | multi-packet SET_KEY |
-| `set_fn_keymap` | `{ keymap: Keymap }` | — | multi-packet SET_FN_KEY |
+The authoritative list is the `tauri::generate_handler![…]` block near
+the end of `src-tauri/src/lib.rs` (about 60 commands). A hand-maintained table
+here drifted within weeks, so there isn't one any more.
 
-All errors come back serde-tagged as
-`{ kind: "Protocol" | "Lock", message: "…" }`.
+Conventions that hold for all of them:
+
+- HID-touching commands are `async fn` and take the `ConnState` tokio
+  mutex (§ 6.3); TFT uploads additionally go through `tft_io` (one writer
+  at a time).
+- `probe_device` is read-only and never opens the cached connection.
+- Errors come back serde-tagged as `{ kind: "Protocol", message: "…" }`.
 
 ---
 
 ## 9. Backlog / Open Questions
 
-### Phase 4 — Macros
-- RE the `GET_MACRO` (21) / `SET_MACRO` (37) wire format in the online
-  driver bundle (`docs/reverse-engineering/online-driver/`).
-- Frontend: macro recorder (capture key sequence + timings), assign to
-  a slot via the existing keymap picker as a new action category.
-- Hardware test against the 3072-byte macro space.
+Open as of October 2026. Sources and reliability for the protocol points
+are in `docs/research/2026-10-25-board-scan.md`.
 
-### Phase 5 — TFT display
-- Decode `SET_TFT_USER_ANIMATION` (80) chunking: 128×128 RGB frames,
-  total payload >> single packet so multi-chunk SET is required.
-- Image upload pipeline: GIF/PNG → frames → resize+dither →
-  device. Use `image-rs` and `gif` crates.
-- Restore-default-animation command (probably `SET_TFT_BUILT_IN_INDEX` 81).
+### Needs a hardware test
+- Does `SET_CUSTOM_LED_DATA` (36) persist across a power cycle on family A?
+  If so, audio-reactive streaming and #11 wear the flash.
+- TFT frame-delay unit: five sources say 2 ms per unit, `tft.rs` uses 5 ms.
+  Stopwatch test with a known GIF.
+- TFT flow control and clock sync from #10 on firmware 1.07.
+- Whether Mario's board exposes `0xFF13` at all (`ak820 list`).
+- Display artefacts #1 (upper half only) and #2 (noise lines).
 
-### Phase 6 — Power features
-- Audio-reactive RGB via `ScreenCaptureKit` system-audio tap + FFT →
-  color mapping → `SET_CUSTOM_LED_DATA` (36) per-key RGB.
-- Now-playing on TFT via macOS `MediaRemote` private framework → text
-  rendering → TFT frame upload.
-- AppleScript / Shortcuts trigger from macro actions.
-- iCloud-Drive backed profile sync
-  (`~/Library/Application Support/ak820pro/`).
-- Cross-platform builds: GitHub Actions matrix (macOS arm64/x86,
-  Windows x86, Linux x86).
-- Notarization: Apple Developer ID + entitlements, automated in CI.
+### Protocol
+- Live per-key colours without storing: cmd 50 / 53 on family A,
+  `04 20` on family B. Would fix #3 and the flash question together.
+- `GET_DEVICE_INFO`: read `gif_max_frames` and friends instead of
+  hard-coded limits.
+- Family B: onboard key maps (`04 11` / `04 27`) and macros, reported
+  working by gha-projects, unverified here.
+- Device notifications on cmd 250 (Caps / Win-Lock / battery state).
 
-### Loose ends
-- ISO-Enter L-shape rendering (current: 1.5u rectangle).
-- Per-key RGB editor (the `customLedData` 128-LED array).
-- Wheel/knob actions — online driver has a `wheelKeys` structure that
-  shares the keymap encoding. Needs UI for "knob CW / CCW / press"
-  triple.
-- Real LED indicators (Caps Lock, Win-Lock, Battery state) from
-  `GET_DEVICE_INFO` / `GET_DEVICE_NOTIFY` (250).
-- Backend hardening: `tokio::sync::Mutex` + async commands so future
-  parallel invocations never deadlock the runtime.
-- Better Lighting color accuracy (the picker doesn't quite match the
-  rendered LED tone — could be HW gamma or the firmware's color-mode
-  handling; worth deeper RE).
+### App
+- Live TFT presets: Battery, Volume, CPU, Clock (#6).
+- iCloud sync of per-key colour snapshots and settings (#4 follow-up).
+- Layout verification for ANSI / ISO-UK / ISO-ES / ISO-FR (#7), JIS (#5).
+- Lighting colour accuracy (picker vs. rendered LED tone).
+
+### Build and release
+- Signed and notarised builds in CI (Apple Developer ID).
+- Windows and Linux builds.
 
 ---
 

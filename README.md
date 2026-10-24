@@ -2,251 +2,212 @@
 
 # AK820 Pro Modder
 
-**Open-source, macOS-first control software for the Epomaker / Ajazz AK820 Pro mechanical keyboard.**
-
-A clean replacement for the Windows-only AJAZZ tool — native, transparent, scriptable.
+Open-source control software for the Epomaker / Ajazz AK820 Pro keyboard, built for macOS.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Status: Beta](https://img.shields.io/badge/status-beta-orange.svg)](#status)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-24C8DB)](https://tauri.app)
-[![Rust](https://img.shields.io/badge/rust-1.82%2B-orange)](https://www.rust-lang.org)
-[![Made for macOS](https://img.shields.io/badge/macOS-11%2B-black)](#install)
+[![Rust](https://img.shields.io/badge/rust-1.90%2B-orange)](https://www.rust-lang.org)
+[![macOS](https://img.shields.io/badge/macOS-11%2B-black)](docs/INSTALL.md)
 
 </div>
 
----
+The vendor's configuration tools run on Windows or in a browser. This app
+covers the same ground on a Mac (lighting, per-key colours, key remapping,
+macros, the 128 × 128 display) and adds a few things the vendor tools
+don't have, such as AppleScript automations bound to keys. It is a desktop
+app (Tauri 2, Rust and React) plus a command-line tool, `ak820`, that uses
+the same protocol library.
 
-## Why
-
-The official Epomaker / Ajazz driver is Windows-only and limited. macOS users get nothing — no lighting tweaks, no key remapping, no macros, no TFT customisation. This project changes that, by reverse-engineering the wire protocol against the official online driver and re-implementing the full feature surface in a clean, native, scriptable stack.
-
-| | Official AJAZZ tool | **AK820 Pro Modder** |
-|---|---|---|
-| macOS support | ❌ Windows only | ✅ Native, signed-build target |
-| CLI / scripting | ❌ | ✅ `ak820` headless binary |
-| Transparent protocol | ❌ closed | ✅ [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — every byte documented |
-| 20 lighting modes | ✅ | ✅ |
-| Per-key RGB | ✅ | ✅ click-to-paint surface |
-| Keymap remap | ✅ | ✅ base + Fn layer + factory-default reset |
-| Macro recorder | ✅ | ✅ live capture in the app |
-| TFT image upload | ✅ | 🚧 wire-format decoded, visibility verification in progress |
-| **AppleScript / Shortcuts library** | ❌ | ✅ host-side runner with 15 starter examples |
-| **Keyboard-triggered automations** | ❌ | ✅ bind AppleScripts to physical keys via F13–F24 markers |
-| **Now-Playing reader (Music + Spotify)** | ❌ | ✅ live in the System view |
-| **Cross-cutting presets** | ❌ | ✅ 10 curated profiles (Gaming / Dev / Office / Creative / Lifestyle) |
-| Audio-reactive lighting | ❌ | 🧪 alpha — pipeline works, real-music smoothness still WIP |
-| Now-playing on TFT | ❌ | 🛣 planned (gated on TFT activation RE) |
-| Profile sync across machines | ❌ | 🧪 beta (iCloud Drive · automations library, more files coming) |
-| Open source | ❌ | ✅ MIT |
+The protocol was reverse-engineered from the official AJAZZ web driver and
+from community work on newer board revisions. What we know is written down
+in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 ## Status
 
-**Version 0.7.0-beta.** Lighting (incl. per-key paint surface), keymap (with factory-default reset), macros, system info, and the host-side automations engine — including a curated 15-entry starter library and one-click cross-cutting presets — are all hardware-verified on the AK820 Pro running firmware 1.07 (**ISO-DE** German QWERTZ layout). 0.7 adds three new top-level capabilities: **audio-reactive lighting** (🧪 alpha, behind a two-stage opt-in), **iCloud-Drive profile sync** for the automations library (🧪 beta), and **four additional physical layouts** — ANSI, ISO-UK, ISO-ES, ISO-FR — driven by a sidebar picker (🧪 beta · unverified without hardware). TFT upload is protocol-complete and ships a CLI smoke test; the in-app TFT UI is gated on one final reverse-engineering step. See the [Roadmap](#roadmap) section for details.
+Version 0.7.0-beta, plus unreleased changes on `main`. Most features have
+been tested on one keyboard: an ISO-DE AK820 Pro on firmware 1.07. Anything not tested on hardware is
+marked as such below and in the [CHANGELOG](CHANGELOG.md).
 
-> ⚠️ **Layout scope.** `v0.6.0-beta` is built **only** for the AK820 Pro **ISO-DE** variant. Within the web-output firmware profile the wire protocol is layout-agnostic; other firmware profiles have separate support requirements — but the on-screen keyboard surface in the Keymap view will mislabel keys on ANSI, ISO-FR, ISO-ES, ISO-UK, or JIS hardware. **Multi-layout support is a planned roadmap item** ([see below](#roadmap)) — once available, layouts will be cleanly separated under `src/data/layouts/`, never mixed.
+This is beta software that writes to the keyboard. Nothing has been
+bricked so far, but there is no warranty. [`SECURITY.md`](SECURITY.md)
+lists the recovery options.
 
-> ⚠️ Beta software. Read-only paths are safe; write paths have been used extensively on a single physical device without bricking, but there are no warranties. The keyboard's hidden bootloader (under the spacebar, see hardware notes) is your rescue path if anything ever goes sideways.
+## Supported keyboards
 
-### USB 0C45:800A / FF13 keyboards
+AK820 Pro boards come in two firmware families. You can't tell them apart
+by USB ID or firmware number, only by the HID interfaces they expose. The
+app checks this when it connects.
 
-This firmware revision ("family B": an `0xFF13` feature-report interface and
-no `0xFF67`) connects on macOS. Lighting effects, per-key RGB (ANSI layout),
-local clock sync, sleep settings and battery status use feature reports;
-image/GIF upload has a separate path that asks for confirmation first,
-because it replaces the animation stored on the keyboard. Lighting writes
-survive a power-off there (measured by adamauthor), so the app writes only
-when you press Apply. Key
-remapping and keyboard macros have explicit Mac-only fallbacks with
-readback/undo and app-local recording. Onboard key/Fn maps, onboard macros,
-built-in TFT animations and live TFT or audio-reactive streams remain
-unavailable on this revision. Ported from adamauthor's and vespovios'
-forks and tested there, not on this repository's build; see the
-[feature matrix and USB verification](docs/MACOS-800A.md).
-The web-output firmware features described elsewhere keep their existing path.
+| | Family A | Family B |
+|---|---|---|
+| How it shows up | `0C45:8009` or `0C45:800A`, control on usage page `0xFF68`, display on `0xFF67` | `0C45:800A` or `0C45:8009`, control on `0xFF13` (feature reports), display on `0xFF68` |
+| Seen on | ISO-DE, firmware 1.07 (our test board) | ANSI boards, e.g. firmware 1.10 and 1.14 |
+| Lighting, 20 effects | yes | yes, written only when you press Apply |
+| Per-key colours | yes | yes, ANSI layout |
+| Key remapping, Fn layer | yes, stored on the keyboard | not decoded; the app offers a Mac-side remap instead |
+| Macros | yes, stored on the keyboard | not decoded; the app offers Mac-side macros instead |
+| Display: presets, images, GIFs | yes | images and GIFs, after a confirmation |
+| Display: Now Playing, clock sync | yes (clock sync not yet tested) | clock sync only |
+| Sleep timer, battery | yes | yes |
+| Audio-reactive lighting | alpha | no |
+| Tested on hardware | yes, apart from the newest changes marked in the CHANGELOG | by the contributors who wrote the support, not yet on this build |
 
-## Quick start
+On family B every lighting and display change is stored in the
+keyboard's flash. Flash survives a limited number of writes, so the app
+never writes there on its own: no live preview while dragging a slider,
+no automatic re-upload of the display. See
+[`docs/MACOS-800A.md`](docs/MACOS-800A.md) for details and measurements.
 
-### Install (macOS, build from source for now)
+Physical layouts: ISO-DE is verified. ANSI, ISO-UK, ISO-ES and ISO-FR can
+be picked in the sidebar but haven't been checked against real keyboards
+yet ([#7](https://github.com/wsclx/ak820pro-modder/issues/7)). JIS is not
+supported ([#5](https://github.com/wsclx/ak820pro-modder/issues/5)).
+
+## Features
+
+The Lighting view has all 20 effects of the official driver, with colour,
+second colour, brightness, speed and direction. Changes apply while you
+edit, or only when you press Apply. Its custom effect shows a clickable
+keyboard for per-key colours.
+
+In the Keymap view you can remap the base and the Fn layer: a key can
+become a letter or digit, an editing or navigation key, an F-key, a
+modifier, a media key, a macro or an automation. Each layer can be reset
+to the factory map. The app warns when you remap F-row keys that the
+keyboard's Mac mode overrides.
+
+Macros are recorded in the app and assigned to a key like any other
+action. One macro holds up to 79 key events; how many fit in total depends
+on the keyboard's macro memory (3 KB on our board).
+
+The display can show twelve presets generated by the app, your own PNG,
+JPEG or GIF (up to 30 frames), or a Now Playing screen for Music and
+Spotify. The app can also set the keyboard clock for the stock clock page
+and switch back to the factory animation.
+
+Automations are AppleScripts, Shortcuts or shell commands from a library
+that starts with 15 examples. Any of them can be bound to a key: the app
+assigns an unused F13–F24 code to it, and pressing the key runs the
+script. Up to 12 bindings work at once, without the Accessibility
+permission.
+
+Ten presets (gaming, coding, office, music, writing, streaming, travel)
+combine lighting, key overrides and automations. You pick which parts to
+apply, and nothing else changes.
+
+With iCloud sync turned on, the automations library is shared between
+Macs through iCloud Drive. Entries are merged one by one; if the same
+entry changed on two Macs, the app asks which version to keep.
+
+Audio-reactive lighting is an alpha feature for macOS 13 and later: bass,
+mids and highs from the system audio drive three colour zones. It still
+flickers on busy music ([#3](https://github.com/wsclx/ak820pro-modder/issues/3))
+and needs the Screen Recording permission, so it stays hidden until you
+unlock it in the Lighting view.
+
+The System view shows firmware, battery and profile and sets the sleep
+timer. The app has a dark and a light theme.
+
+## Install
+
+There are no signed releases yet; build from source. You need Rust 1.90
+or newer, Node.js 22 and pnpm 10 (pinned in `package.json`; with
+`corepack enable` the right version is used automatically).
 
 ```bash
-# Prerequisites: Rust 1.82+, Node.js 20+, pnpm
 git clone https://github.com/wsclx/ak820pro-modder.git
 cd ak820pro-modder
 pnpm install
 pnpm tauri:build
-open src-tauri/target/release/bundle/dmg/*.dmg
+open target/release/bundle/dmg/*.dmg
 ```
 
-Drag **AK820 Pro Modder.app** into Applications and launch.
+The build is unsigned, so macOS asks for confirmation on first launch.
+[`docs/INSTALL.md`](docs/INSTALL.md) has the details, the permissions the
+app asks for, and troubleshooting.
 
-Signed `.dmg` releases will land on the [Releases](https://github.com/wsclx/ak820pro-modder/releases) page once the codesigning pipeline is wired up.
-
-### CLI usage
+## Command line
 
 ```bash
 cargo build -p ak820-cli --release
-./target/release/ak820 list                  # enumerate every HID interface
-./target/release/ak820 probe                 # open control endpoint, sanity check
-./target/release/ak820 info                  # firmware + battery + profile
+./target/release/ak820 list                       # HID interfaces and their roles
+./target/release/ak820 capabilities               # what this board's firmware supports
+./target/release/ak820 info                       # firmware, battery, profile
 ./target/release/ak820 lighting set --mode static --color FF00AA
-./target/release/ak820 rgb fill --color 00FF80   # per-key static colour
-./target/release/ak820 rgb rainbow               # 128-LED rainbow gradient
-./target/release/ak820 macros list           # dump every stored macro
-./target/release/ak820 hid-descriptors       # debug: report sizes per interface
+./target/release/ak820 rgb fill --color 00FF80    # all keys one colour
+./target/release/ak820 tft sync-time              # set the keyboard clock
+./target/release/ak820 tft upload cat.gif --dry-run
 ```
 
-Full CLI help is `ak820 --help`.
+`ak820 --help` lists every command; add `--json` for machine-readable
+output.
 
-## Features
+## Known issues
 
-### Lighting
-- All 20 effect modes from the official driver (static, breathing, spectrum, ripples, flowing, …)
-- RGB picker with HSL preview
-- Dual-tone secondary colour for the modes that support it
-- Brightness + speed 0–5
-- Direction (left / right / up / down) where the mode honours it
-- Live apply with debounce; toggle to manual mode for slower-feedback tweaks
+- On our test board the display showed a preset only in its upper half ([#1](https://github.com/wsclx/ak820pro-modder/issues/1)), and some animations show horizontal noise lines ([#2](https://github.com/wsclx/ak820pro-modder/issues/2)). Since [#10](https://github.com/wsclx/ak820pro-modder/pull/10), uploads wait for the keyboard to acknowledge each chunk, which may fix #2; this hasn't been confirmed on hardware.
+- GIF frame timing may be off: several community projects use 2 ms per unit where we use 5 ms. A stopwatch test on hardware is pending.
+- iCloud sync covers the automations library only, not per-key colours or settings.
+- No Windows or Linux builds.
 
-### Keymap & layers
-- Visual ISO-DE keyboard surface, resizable via window drag (CSS `transform: scale()` for pixel-perfect re-render)
-- Click any key → pick a new action → save writes both base + Fn layers atomically
-- 128 slots, every keystroke type covered: HID keyboard, consumer (media), mouse, layer toggle, macro trigger, raw-passthrough for unknown classes
-- Heads-up warning when remapping F-row keys in macOS-mode (the firmware preempts those with media keys on the physical Mac/Win switch)
-
-### Macros
-- Record macros directly in the app — every browser `keydown` / `keyup` becomes a wire event with millisecond delays
-- Up to 100 slots × 320 bytes (~79 actions per macro)
-- Two-phase atomic commit so a partial write can't leave the keyboard in a weird state
-- Assignable to any key from the **Macros** action group in the keymap picker
-
-### System
-- Firmware version + battery level + charge state + active profile slot
-- Sleep-timer presets (never / 1m / 5m / 10m / 15m / 30m)
-- Live device info read-back after every write to confirm the keyboard actually accepted what we sent
-- **Now-Playing card** (macOS): live read of Music.app + Spotify desktop, refreshed every 2 s. Foundation for streaming the track to the TFT display once the activation sequence is unblocked.
-
-### Per-key RGB
-- Click-to-paint surface that mirrors the ISO-DE keyboard layout
-- Brush palette + Fill-all / Clear-all helpers
-- Auto-apply with 120 ms debounce so painting feels real-time on the hardware
-- Hidden under the Lighting view's `custom` effect mode (`SET_LED_EFFECT` with mode byte `0x80`)
-
-### Automations
-- Host-side library of AppleScripts, macOS Shortcuts, and shell commands
-- **15 curated starter examples** out of the box across six categories (System, Files, Clipboard, Media, Web, Dev) — no sudo, no external deps, all safe
-- Per-entry editor with type-aware payload (textarea for AppleScript / shell, picker for installed Shortcuts)
-- Inline run + stdout/stderr/exit-code panel
-- Persisted to `~/Library/Application Support/io.github.wsclx.ak820pro-modder/automations.json`
-- **Bind any automation to a physical key** in the Keymap view: pick from the `Automations` action group → backend auto-assigns an F13–F24 marker → registers a global hotkey via Carbon `RegisterEventHotKey` → key press fires the script (up to 12 simultaneous bindings, no Accessibility permission needed)
-
-### Presets
-- Cross-cutting profiles bundling lighting + sparse keymap overrides + automation seeds
-- **10 starter presets** across 5 categories: Gaming (FPS · MMO), Dev (Linux Terminal · Vibe Coder · White Hat), Office (MS365), Creative (Music Production · Writing Focus), Lifestyle (Streaming · Travel battery saver)
-- **Additive apply** — patches your current state, doesn't wipe anything. The user opts into each component (lighting / base keymap / Fn keymap / automations) per preset.
-- Inline post-apply report showing exactly what changed
-
-### Theming
-- Dark + Light themes, both with foreground contrast above WCAG AA on every text-on-surface combination (primaries hit AAA)
-- System-pref aware on first launch (`prefers-color-scheme`)
-- Manual toggle in the sidebar footer · persisted to `localStorage`
-- Driven by CSS custom properties under `data-theme="dark|light"` on `<html>`, so adding a new theme later (e.g. a high-contrast variant) is one CSS block
-
-### Audio-reactive lighting (Alpha — opt-in)
-- macOS-only · macOS 13+ · uses Apple's [ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit) for the system-audio tap (Screen-Recording permission required, same TCC bucket as the screen-capture API even for audio-only streams)
-- Pure-Rust FFT pipeline (`realfft` crate) in `crates/ak820-audio-reactive/` — splits the spectrum into bass / mids / highs bands, applies a Hann window + dB scaling + asymmetric EMA smoothing
-- Spectrum preset maps each band to a vertical zone on the keyboard: cols 0-4 red (bass), cols 5-10 green (mids), cols 11-15 blue (highs); gamma + brightness floor so the keyboard's structure stays visible even between beats
-- **Known limitations (why this is alpha)**: the wire-level cadence of `SET_CUSTOM_LED_DATA` (10 chunked HID reports per frame) makes the firmware's per-key RGB pipeline visibly stutter on busy music. Frame deduplication helps but doesn't fully eliminate the flicker. Improving this needs a protocol-layer change (skip the per-chunk ACK in `set_many_at` for write-only payloads).
-- **Two-stage UI gate**: Lighting view has a "Locked / Unlocked" toggle for the experimental opt-in, then a "Streaming Off / On" toggle for the actual capture. The unlock persists across launches via `localStorage` so contributors don't re-click it, but the casual user can't trip the feature accidentally.
-
-### Coming next
-See the [Roadmap](#roadmap) section and the [`docs/HANDOFF.md`](docs/HANDOFF.md) file for the engineering trail.
-
-## Architecture
+## Project layout
 
 ```
-ak820pro-modder/
-├── crates/
-│   ├── ak820-protocol/      Pure-Rust library — HID framing, command encoders/decoders
-│   │   └── src/commands/    One module per feature family (lighting, keymap, macros, …)
-│   └── ak820-cli/           `ak820` headless binary (scripting + RE / smoke tests)
-├── src-tauri/               Tauri 2 shell — async commands marshal between UI and protocol crate
-├── src/                     React 19 + TypeScript + Tailwind 3 frontend
-│   ├── views/               One file per top-level tab (Connect, Lighting, Keymap, Macros, …)
-│   ├── components/          Shared UI primitives (Card, Button, Slider, …)
-│   └── data/                Static layout descriptors + curated action catalogues
-├── docs/
-│   ├── PROTOCOL.md          Living byte-level wire documentation
-│   ├── ARCHITECTURE.md      High-level design + tech stack rationale
-│   ├── HANDOFF.md           Engineering handoff: foot-guns, decisions, debug trail
-│   └── reverse-engineering/ Scraped vendor bundles + USB pcap captures (gitignored)
-└── tests/                   Hardware-in-the-loop fixtures (gitignored)
+crates/ak820-protocol/   Protocol library: device detection, both firmware families, all commands
+crates/ak820-cli/        The `ak820` command-line tool
+crates/ak820-audio-reactive/  System-audio capture and FFT (macOS)
+src-tauri/               Desktop app backend: Tauri commands, automations, iCloud sync, Mac keyboard features
+src/                     React + TypeScript frontend, one file per tab in src/views/
+docs/                    Protocol, architecture, install notes, engineering handoff
 ```
 
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains why Tauri + Rust over Electron / PyQt / WebHID.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) explains the layering;
+[`docs/HANDOFF.md`](docs/HANDOFF.md) is the long engineering log with
+the pitfalls we ran into.
 
-## Hardware reference
+## Hardware notes
 
-| Component | Part | Notes |
-|---|---|---|
-| Main MCU | HFD80CP100 (Sonix SN32F299 clone) | 6 × 15 key matrix |
-| Wireless | WCH CH582F | BLE 5.1 + 2.4 GHz, I²C to MCU |
-| Flash | PY25Q128HA | 16 MB SPI — firmware + configs + GIF frames |
-| Display | NFP085B-10AF, 0.85″ 128 × 128 | GC9107 controller, SPI |
-| Bootloader | Hidden pins under spacebar | ISP-mode VID/PID `0x0C45 / 0x7140` |
-| Operating VID/PID | `0x0C45 / 0x8009` (wired + 2.4 GHz) | `0xFEFE` for BT, control on HID interface 2 (`usage_page 0xFF68`) |
-| **Tested layout** | **ISO-DE** (German QWERTZ) | The wire protocol is layout-agnostic; only the rendered keyboard surface in the Keymap view is layout-specific. ANSI / ISO-FR / ISO-ES / ISO-UK / JIS variants exist for the AK820 Pro and are on the multi-layout roadmap. |
+| Part | Detail |
+|---|---|
+| MCU | HFD80CP100 (Sonix SN32F299 clone), 6 × 15 matrix |
+| Wireless | WCH CH582F, Bluetooth 5.1 and 2.4 GHz |
+| Flash | PY25Q128HA, 16 MB SPI: firmware, settings, display frames |
+| Display | NFP085B-10AF, 0.85″, 128 × 128, GC9107 controller |
+| Bootloader | hidden pads under the spacebar, ISP mode `0C45:7140` |
 
-Credit to the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hardware-doc project for the early MCU / wireless / flash identification — see [Acknowledgements](#acknowledgements).
-
-## Roadmap
-
-| Phase | Status | Description |
-|---|---|---|
-| 0 — Foundation | ✅ | Tauri shell, workspace, HID transport, probe handshake |
-| 1 — Lighting | ✅ | 20 modes + secondary colour + brightness / speed / direction |
-| 2 — System | ✅ | Device info, battery, sleep timer, profile, game-mode |
-| 3 — Keymap | ✅ | Base + Fn layer editor, visual ISO-DE surface, 128-slot round-trip, factory-default reset |
-| 4 — Macros | ✅ | Recorder, editor, ActionCatalog integration, hardware-verified |
-| 5a — Per-key RGB | ✅ | Protocol + CLI + click-to-paint UI in the Lighting view |
-| 5b — TFT display | 🟡 | Protocol + CLI upload verified at wire level; visibility flip pending USB pcap of the official Windows tool |
-| 6a — Now-Playing reader | ✅ | macOS Music.app + Spotify desktop, surfaced in System view |
-| 6b — Automations engine | ✅ | AppleScript / Shortcut / Shell library, 15 curated starters, keyboard-side triggers via F13–F24 markers |
-| 6c — Cross-cutting presets | ✅ | 10 curated profiles across Gaming / Dev / Office / Creative / Lifestyle |
-| 6d — Audio-reactive lighting | 🧪 alpha | ScreenCaptureKit + Hann-windowed real FFT → bass/mids/highs → Spectrum preset on the per-key grid. Two-stage Alpha unlock in the Lighting view. Real-music smoothness still WIP (firmware HID pipeline saturates at ~15 fps for a full 128-LED update). |
-| 6e — Now-playing on TFT | 🛣 | Gated on Phase 5b — stream the Now-Playing reader's snapshot to the keyboard's display |
-| 6f — iCloud profile sync | 🧪 beta | Automations library round-trips through `~/Library/Mobile Documents/com~apple~CloudDocs/ak820pro-modder/`. Toggle + Push/Pull/Refresh in System view. Per-record merge + custom-LED snapshots + settings come in 0.7.x. |
-| 7 — Cross-platform | 🛣 | Windows + Linux builds via GitHub Actions |
-| 8 — Multi-layout | 🧪 beta | ANSI, ISO-UK, ISO-ES, ISO-FR variants shipped alongside ISO-DE; layout picker in the sidebar with `localStorage` persistence. All four are **🧪 unverified** — slot mapping hand-derived from the AJAZZ ISO-DE export without hardware confirmation. JIS deferred — Japanese boards need hardware verification due to extra physical keys (Henkan, Muhenkan). |
+Hardware identification is from [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro).
 
 ## Contributing
 
-This is an open project. We need:
+Help is welcome, and some of it needs nothing more than a keyboard:
 
-- 🧪 **Hardware testers** — `v0.6.0-beta` is built for **ISO-DE only**. If you own an ANSI / ISO-FR / ISO-ES / ISO-UK / JIS AK820 Pro, the wire protocol still works (lighting, system, per-key RGB, TFT), but the Keymap surface will be mislabelled. Capture your physical layout into a new file under `src/data/layouts/` — see the layouts directory's `index.ts` for the three-step add-a-layout recipe.
-- 🕵️ **Reverse engineers** — USB pcap captures of the official Windows tool doing specific actions (especially TFT upload and the per-key RGB enable path).
-- 🦀 **Rust developers** — protocol modules, error handling, additional decoders.
-- ⚛️ **Frontend developers** — UI for TFT image upload, per-key RGB paint mode, audio-reactive visualisation.
-- 📝 **Docs writers** — better install instructions per platform.
+- If you have a family-B board, run the test plan in [#14](https://github.com/wsclx/ak820pro-modder/pull/14) and report what works.
+- If you have an ANSI, ISO-UK, ISO-ES, ISO-FR or JIS board, check that the keys in the Keymap view sit where your keycaps are.
+- With a Windows machine you can record USB captures of the official tool, especially for the display and the knob.
+- For code, the open [issues](https://github.com/wsclx/ak820pro-modder/issues) are a good start.
 
-Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR. Issues are open — see the [issue templates](.github/ISSUE_TEMPLATE) for the kind of structured info that makes a bug report or protocol finding actually actionable.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) describes the setup, the checks a PR
+has to pass and how to test write paths safely. Please follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Security problems go through a
+private advisory, see [`SECURITY.md`](SECURITY.md).
 
-By contributing you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+## Credits
 
-## Security
+This project is maintained by [@wsclx](https://github.com/wsclx).
+Contributions so far:
 
-Hardware control surfaces are inherently risky. Read [`SECURITY.md`](SECURITY.md) for our disclosure policy and the rescue procedures (ISP bootloader, factory reset over HID).
+- [@adamauthor](https://github.com/adamauthor) wrote the family-B support (`0C45:800A` / `0xFF13`): the feature-report transport, image and GIF upload, lighting, clock, sleep and battery, and the Mac-side key remapping and macros. Their measurements showed that a write must be committed before it is closed, and that lighting changes survive a power cycle ([#12](https://github.com/wsclx/ak820pro-modder/pull/12)).
+- [@vespovios](https://github.com/vespovios) found the display slot that keeps family-B uploads visible and decoded the ANSI per-key colour bank. [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) and [`docs/PER-KEY-RGB.md`](docs/PER-KEY-RGB.md) come from their fork.
+- [@0x5k](https://github.com/0x5k) reported the timeout on an ANSI board ([#8](https://github.com/wsclx/ak820pro-modder/issues/8)) that started the family-B work.
 
-## Acknowledgements
+Earlier and parallel work we built on or checked against:
 
-- [@gohv](https://github.com/gohv) — [EPOMAKER-Ajazz-AK820-Pro](https://github.com/gohv/EPOMAKER-Ajazz-AK820-Pro) for the original Linux Rust port. Inspired this project's architecture; its lighting findings turned out to be wrong on macOS (the official online driver uses a different wire format) but the encoder skeleton was a useful starting point.
-- [@TaxMachine](https://github.com/TaxMachine) — [ajazz-keyboard-software-linux](https://github.com/TaxMachine/ajazz-keyboard-software-linux) for the C++ pcap-parser approach and continued protocol RE.
-- [@fpb](https://github.com/fpb) — [ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) for hardware identification (MCU, wireless chip, flash, display).
-- The [SonixQMK](https://github.com/SonixQMK) project — keeping a path open to eventual QMK firmware support for the SN32F299 family.
+- [gohv/EPOMAKER-Ajazz-AK820-Pro](https://github.com/gohv/EPOMAKER-Ajazz-AK820-Pro), a Linux port in Rust. Its encoder layout was our starting point; its lighting packets turned out not to work on our board.
+- [TaxMachine/ajazz-keyboard-software-linux](https://github.com/TaxMachine/ajazz-keyboard-software-linux), for its approach to parsing USB captures.
+- [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro), for the hardware identification above.
+- [fromagge/ak820-screen](https://github.com/fromagge/ak820-screen), [gha-projects/ak820-mac](https://github.com/gha-projects/ak820-mac), [allshouldbeready/ak820-pro-macos](https://github.com/allshouldbeready/ak820-pro-macos) and [DarkTiengo/ak820ctl](https://github.com/DarkTiengo/ak820ctl), whose protocol notes we compared ours against (the 35 ms command pause, the display slot, frame timing); see [`docs/research/2026-10-25-board-scan.md`](docs/research/2026-10-25-board-scan.md).
+- [SonixQMK](https://github.com/SonixQMK), which keeps the option of QMK firmware for this chip family open.
 
 ## License
 
 [MIT](LICENSE) © wsclx
-
----
-
-<sub>v0.6.0-beta · made with ❤️ for the macOS mechanical-keyboard community · open issues / PRs at [github.com/wsclx/ak820pro-modder](https://github.com/wsclx/ak820pro-modder)</sub>

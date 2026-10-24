@@ -6,28 +6,44 @@ Pre-1.0 releases ship security fixes on the current `main` branch only. We don't
 
 | Version | Supported |
 |---|---|
-| 0.5.x-beta | ✅ |
-| < 0.5.0   | ❌ |
+| `main` / 0.7.x-beta | yes |
+| older | no |
 
 ## Threat model
 
 `AK820 Pro Modder` talks to one USB-HID device via `hidapi`. Concretely:
 
-1. **Local-only attack surface.** The app does not phone home, take network input, or expose any listening port. All data lives on disk in the user's profile directory and on the keyboard itself.
-2. **Privileged hardware control.** USB-HID writes can in principle:
-   - brick the keyboard if firmware-illegal sequences are sent (we have not observed this on fw 1.07 across thousands of writes, but no warranty),
-   - corrupt onboard storage (keymap, macros, lighting effect),
-   - drain battery faster than the firmware default.
-3. **macOS Notarisation.** Pre-built releases will be signed and notarised. If you build from source, macOS Gatekeeper will mark the binary as quarantined on first launch; that's expected.
+1. Local only. The app opens no network connections and no listening
+   ports. Its data lives in the user's Application Support folder, in
+   iCloud Drive if sync is turned on, and on the keyboard.
+2. It runs what you tell it to. Automations are AppleScripts, Shortcuts
+   and shell commands from your own library, run with your user's rights.
+   On family-B boards the Mac-side macros post key events through macOS
+   (Accessibility permission).
+3. It writes to the keyboard. USB-HID writes can in principle
+   - leave the keyboard unusable if the firmware rejects a sequence badly
+     (not observed so far, but there is no warranty),
+   - corrupt stored settings (key map, macros, lighting),
+   - wear the flash: on family-B boards every lighting and display write
+     is stored, so the app only writes on explicit actions there.
+4. Unsigned builds. Builds from source are not notarised; macOS asks for
+   confirmation on first launch.
 
 ## Hardware rescue paths
 
 If a write puts your keyboard in a weird state, in increasing order of severity:
 
-1. **Reload defaults via the app**: any view's "Factory default" or "Reload" button issues a read-only sync from the device.
-2. **CLI factory reset**: not yet implemented (cmd 15 `SET_FACTORY_RESET` exists but is gated behind a `--yes-really` flag we haven't shipped — see [`docs/PROTOCOL.md`](docs/PROTOCOL.md)).
-3. **Unplug + replug + reset switch on the back** (Mac ↔ Win toggle counts as a soft reset).
-4. **Hidden ISP bootloader**: there are hidden pins under the spacebar (see `docs/HANDOFF.md` § 2 and the [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro) hardware notes). Shorting them on power-up forces the keyboard into Sonix ISP mode (`VID/PID 0x0C45 / 0x7140`), where the official Sonix Toolchain can re-flash factory firmware.
+1. Write the previous value again: lighting, sleep timer and per-key
+   colours can simply be set back. The Keymap view's **Factory default**
+   button restores the default key map (family A).
+2. Unplug the keyboard and plug it back in.
+3. A full factory reset over HID (command 15) is known from the vendor
+   driver but deliberately not exposed by the app or the CLI.
+4. The hidden ISP bootloader: pads under the spacebar (see
+   [fpb/ajazz-ak820-pro](https://github.com/fpb/ajazz-ak820-pro)).
+   Shorting them at power-up starts Sonix ISP mode (`0C45:7140`), where
+   Sonix tools can flash the factory firmware again. The app ignores
+   devices in this mode.
 
 ## Reporting a vulnerability
 
@@ -40,7 +56,7 @@ If you find a way to:
 
 **please open a private security advisory** at <https://github.com/wsclx/ak820pro-modder/security/advisories/new>.
 
-We aim to respond within 7 days, and to ship a fix or detailed mitigation guidance within 30 days for high-severity reports. Coordinated disclosure of up to 90 days is fine — we'd rather get the fix right than rushed.
+We aim to respond within 7 days, and to ship a fix or detailed mitigation guidance within 30 days for high-severity reports. Coordinated disclosure of up to 90 days is fine; we'd rather get the fix right than rush it.
 
 Please **do not** open a public issue for security reports.
 
@@ -53,11 +69,11 @@ In-scope:
 
 Out-of-scope:
 - Vulnerabilities in the keyboard firmware itself (please report those to Epomaker / Ajazz directly).
-- Issues affecting only the development environment (CI, build scripts) — those go in the regular issue tracker.
+- Issues affecting only the development environment (CI, build scripts); those go in the regular issue tracker.
 - Theoretical issues without a working PoC.
 
 ## Acknowledgements
 
-Confirmed reports will be credited (with permission) in the [CHANGELOG](CHANGELOG.md) and in a forthcoming `SECURITY-ACKNOWLEDGEMENTS.md`.
+Confirmed reports are credited in the [CHANGELOG](CHANGELOG.md) if the reporter agrees.
 
 Thanks for keeping the project safe to use.
