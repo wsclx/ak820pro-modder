@@ -94,6 +94,32 @@ export interface AutomationRunResult {
   success: boolean;
 }
 
+/* ---- iCloud sync (Phase 6f, per-entry merge) ---- */
+
+/** Mirrors `SyncConflict` from `src-tauri/src/icloud_sync.rs`. `null` = deleted on that side. */
+export interface SyncConflict {
+  id: number;
+  local: Automation | null;
+  remote: Automation | null;
+}
+
+/** Mirrors `SyncStatus` from `src-tauri/src/icloud_sync.rs`. */
+export interface SyncStatus {
+  icloud_available: boolean;
+  icloud_path: string | null;
+  remote_automations_present: boolean;
+  remote_automations_mtime_ms: number | null;
+  conflicts: SyncConflict[];
+}
+
+/** Mirrors `SyncReport` — what one `icloud_sync_push` / `_pull` changed. */
+export interface SyncReport {
+  remote_mtime_ms: number | null;
+  local_changed: boolean;
+  remote_changed: boolean;
+  conflicts: SyncConflict[];
+}
+
 /** Curated starter — template form (no id / timestamps). */
 export interface StarterAutomation {
   name: string;

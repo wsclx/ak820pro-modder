@@ -55,9 +55,10 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
   const [probe, setProbe] = useState<ProbeReport | null>(null);
 
-  // iCloud auto-pull on app start. Fire-and-forget — if the iCloud
-  // copy of automations.json is newer than the local one, the backend
-  // overwrites the local file before any view requests its contents.
+  // iCloud auto-sync on app start. Fire-and-forget — the backend merges
+  // the iCloud copy of the automations library into the local file
+  // (per entry; conflicts wait in System → iCloud Sync) before any view
+  // requests its contents.
   // The frontend never sees the in-flight state because all
   // automation-consuming views fetch on mount, and this effect runs
   // before any view-specific effect.

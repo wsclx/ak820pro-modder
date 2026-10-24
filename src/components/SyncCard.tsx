@@ -3,8 +3,9 @@
  *
  * Three states it has to render:
  *   1. macOS user with iCloud Drive set up → full UI: auto-sync toggle
- *      plus manual Push / Pull buttons, status line with last-synced
- *      timestamp.
+ *      plus a manual "Sync now" button, status line with last-synced
+ *      timestamp, and the list of open conflicts with one button per
+ *      side to settle each.
  *   2. macOS user without iCloud Drive → "not detected" message
  *      explaining how to enable it.
  *   3. Non-macOS / build failure → falls into the not-detected branch
@@ -21,15 +22,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { Badge, Button, Card, Mono } from "./ui";
 import { Toggle } from "./ui";
 import { formatError } from "../errors";
+import type { Automation, SyncReport, SyncStatus } from "../types";
 
 export const ICLOUD_SYNC_ENABLED_KEY = "ak820:icloud-sync-enabled";
-
-interface SyncStatus {
-  icloud_available: boolean;
-  icloud_path: string | null;
-  remote_automations_present: boolean;
-  remote_automations_mtime_ms: number | null;
-}
 
 function readEnabled(): boolean {
   try {
@@ -62,6 +57,13 @@ function formatRelative(ms: number | null): string {
   return new Date(ms).toLocaleDateString();
 }
 
+/** One side of a conflict; `null` means the entry was deleted there. */
+function describeCopy(a: Automation | null): string {
+  if (a === null) return "deleted";
+  // Entries from before the merge carry updated_at = 0.
+  return `“${a.name}”, edited ${formatRelative(a.updated_at || null)}`;
+}
+
 export function SyncCard() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [enabled, setEnabled] = useState<boolean>(readEnabled);
@@ -81,6 +83,7 @@ export function SyncCard() {
         icloud_path: null,
         remote_automations_present: false,
         remote_automations_mtime_ms: null,
+        conflicts: [],
       });
       setErr(formatError(e));
     }
@@ -95,40 +98,24 @@ export function SyncCard() {
     writeEnabled(v);
     setInfo(
       v
-        ? "Auto-sync on. Future saves push to iCloud; next launch pulls from it."
+        ? "Auto-sync on. Every save and every app start merge with iCloud."
         : "Auto-sync off. Manual buttons still work below.",
     );
   }
 
-  async function manualPush() {
+  async function syncNow(resolve?: { id: number; keep: "local" | "remote" }) {
     setBusy(true);
     setErr(null);
     setInfo(null);
     try {
-      const mtime = await invoke<number>("icloud_sync_push");
-      setInfo(`Pushed at ${new Date(mtime).toLocaleTimeString()}`);
-      await refresh();
-    } catch (e) {
-      setErr(formatError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function manualPull() {
-    setBusy(true);
-    setErr(null);
-    setInfo(null);
-    try {
-      const mtime = await invoke<number | null>("icloud_sync_pull");
-      if (mtime === null) {
-        setInfo("Already up to date — local copy is at least as recent.");
-      } else {
-        setInfo(
-          `Pulled iCloud copy (mtime ${new Date(mtime).toLocaleTimeString()}). ` +
-            "Reload the Automations tab to see the merged list.",
-        );
-      }
+      const r = await invoke<SyncReport>("icloud_sync_pull", { resolve: resolve ?? null });
+      const what = [
+        r.local_changed && "took changes from iCloud",
+        r.remote_changed && "sent changes to iCloud",
+      ]
+        .filter(Boolean)
+        .join(" and ");
+      setInfo(what ? `Synced: ${what}.` : "Already in sync.");
       await refresh();
     } catch (e) {
       setErr(formatError(e));
@@ -171,9 +158,10 @@ export function SyncCard() {
       ) : (
         <>
           <p className="text-sm text-fg-2">
-            Round-trips your automations list through iCloud Drive so a fresh
-            install on another Mac picks up the same library. Last-write-wins
-            by modification time; no per-record merging yet.
+            Merges your automations library with iCloud Drive entry by entry,
+            so changes and deletions made on different Macs add up. If the
+            same automation changed on both sides, it shows up below and you
+            pick the copy to keep.
           </p>
           <dl className="mt-3 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
             <dt className="text-fg-3">Sync folder</dt>
@@ -195,12 +183,50 @@ export function SyncCard() {
             </dd>
           </dl>
 
+          {status.conflicts.length > 0 && (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-warn">
+                {status.conflicts.length === 1
+                  ? "1 automation changed"
+                  : `${status.conflicts.length} automations changed`}{" "}
+                on this Mac and in iCloud since the last sync. Pick the copy
+                to keep; it replaces the other one on every Mac.
+              </p>
+              {status.conflicts.map((c) => (
+                <div
+                  key={c.id}
+                  className="rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-sm"
+                >
+                  <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+                    <dt className="text-fg-3">This Mac</dt>
+                    <dd className="text-fg-1">{describeCopy(c.local)}</dd>
+                    <dt className="text-fg-3">iCloud</dt>
+                    <dd className="text-fg-1">{describeCopy(c.remote)}</dd>
+                  </dl>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => void syncNow({ id: c.id, keep: "local" })}
+                      disabled={busy}
+                    >
+                      Keep this Mac's
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => void syncNow({ id: c.id, keep: "remote" })}
+                      disabled={busy}
+                    >
+                      Use iCloud's
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button onClick={() => void manualPull()} disabled={busy}>
-              Pull from iCloud
-            </Button>
-            <Button onClick={() => void manualPush()} disabled={busy}>
-              Push to iCloud
+            <Button onClick={() => void syncNow()} disabled={busy}>
+              Sync now
             </Button>
             <Button variant="ghost" size="sm" onClick={() => void refresh()} disabled={busy}>
               Refresh status

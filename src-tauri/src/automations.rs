@@ -16,8 +16,9 @@
 //! Storage path on macOS:
 //! `~/Library/Application Support/io.github.wsclx.ak820pro-modder/automations.json`
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// What kind of host command an automation runs.
@@ -36,7 +37,7 @@ pub enum AutomationKind {
 }
 
 /// One library entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Automation {
     /// Stable identifier — generated client-side as a u64 timestamp + counter.
     pub id: u64,
@@ -51,6 +52,9 @@ pub struct Automation {
     /// Unix millis. Used only for sort order in the UI.
     #[serde(default)]
     pub created_at: i64,
+    /// Unix millis of the last edit. The iCloud merge compares it with the
+    /// value seen at the last sync to tell which Mac changed the entry.
+    /// Files from before that merge may lack it; they load as 0.
     #[serde(default)]
     pub updated_at: i64,
 
@@ -71,36 +75,98 @@ pub struct RunResult {
     pub success: bool,
 }
 
+/// Marks a deleted automation. Kept next to the library (locally and in
+/// iCloud) so the sync merge can tell "deleted on another Mac" from "that
+/// Mac never had it", and a stale copy can't bring the entry back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Tombstone {
+    pub id: u64,
+    /// Unix millis of the deletion.
+    pub deleted_at: i64,
+}
+
+/// How long a tombstone is kept. It must outlive every stale copy of the
+/// entry, i.e. the longest stretch a Mac goes without syncing; 180 days
+/// covers a laptop left in a drawer for a season. A tombstone is ~40 bytes,
+/// so keeping it that long costs nothing. A Mac that was away even longer
+/// can bring the entry back, which is visible and undone by deleting it
+/// again; it never loses data.
+pub const TOMBSTONE_TTL_MS: i64 = 180 * 24 * 60 * 60 * 1000;
+
+impl Tombstone {
+    pub fn expired(&self, now: i64) -> bool {
+        now - self.deleted_at >= TOMBSTONE_TTL_MS
+    }
+}
+
+/// File name of the tombstone list, the same locally and in iCloud.
+pub const TOMBSTONES_FILENAME: &str = "automations-tombstones.json";
+
 /// Compute the persistence path. Caller may have to create parent dirs.
 pub fn storage_path(app_data: PathBuf) -> PathBuf {
     app_data.join("automations.json")
 }
 
-/// Load all automations. A missing file is treated as an empty library —
-/// not an error — so the user sees an empty UI on first launch.
-pub fn load(app_data: PathBuf) -> Result<Vec<Automation>, String> {
-    let p = storage_path(app_data);
-    if !p.exists() {
-        return Ok(Vec::new());
-    }
-    let raw = std::fs::read_to_string(&p).map_err(|e| format!("read {p:?}: {e}"))?;
-    let parsed: Vec<Automation> =
-        serde_json::from_str(&raw).map_err(|e| format!("parse {p:?}: {e}"))?;
-    Ok(parsed)
+pub fn tombstones_path(app_data: PathBuf) -> PathBuf {
+    app_data.join(TOMBSTONES_FILENAME)
 }
 
-/// Persist a new full list. Atomic-ish: write to a sibling tempfile then
-/// rename so a crash mid-write can't corrupt the existing list.
-pub fn save(app_data: PathBuf, list: &[Automation]) -> Result<(), String> {
-    let p = storage_path(app_data.clone());
+/// Parse a JSON file. A missing file yields `T::default()` (empty list or
+/// map), not an error, so first launch and pre-sync installs just work.
+pub fn read_json<T: DeserializeOwned + Default>(p: &Path) -> Result<T, String> {
+    if !p.exists() {
+        return Ok(T::default());
+    }
+    let raw = std::fs::read_to_string(p).map_err(|e| format!("read {p:?}: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("parse {p:?}: {e}"))
+}
+
+/// Atomic-ish write: write to a sibling tempfile then rename so a crash
+/// mid-write can't corrupt the existing file.
+pub fn write_json<T: Serialize + ?Sized>(p: &Path, value: &T) -> Result<(), String> {
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {parent:?}: {e}"))?;
     }
-    let body = serde_json::to_string_pretty(list).map_err(|e| format!("serialize: {e}"))?;
+    let body = serde_json::to_string_pretty(value).map_err(|e| format!("serialize: {e}"))?;
     let tmp = p.with_extension("json.tmp");
     std::fs::write(&tmp, body).map_err(|e| format!("write {tmp:?}: {e}"))?;
-    std::fs::rename(&tmp, &p).map_err(|e| format!("rename {tmp:?} → {p:?}: {e}"))?;
+    std::fs::rename(&tmp, p).map_err(|e| format!("rename {tmp:?} → {p:?}: {e}"))?;
     Ok(())
+}
+
+/// Load all automations. A missing file is treated as an empty library —
+/// not an error — so the user sees an empty UI on first launch.
+pub fn load(app_data: PathBuf) -> Result<Vec<Automation>, String> {
+    read_json(&storage_path(app_data))
+}
+
+/// Persist a new full list. Entries that were on disk but are missing from
+/// `list` get a tombstone so the iCloud merge spreads the deletion instead
+/// of re-adding the entry from another Mac. Recorded even with sync off:
+/// turning sync on later must not revive what was deleted meanwhile.
+pub fn save(app_data: PathBuf, list: &[Automation]) -> Result<(), String> {
+    let p = storage_path(app_data.clone());
+    // An unreadable old file just yields no tombstones, like before.
+    let previous: Vec<Automation> = read_json(&p).unwrap_or_default();
+    let removed: Vec<u64> = previous
+        .iter()
+        .map(|a| a.id)
+        .filter(|id| !list.iter().any(|a| a.id == *id))
+        .collect();
+    if !removed.is_empty() {
+        let tp = tombstones_path(app_data);
+        let now = crate::unix_millis();
+        // A broken tombstone file must not block deleting; losing it can
+        // only revive entries, never drop them.
+        let mut tombs: Vec<Tombstone> = read_json(&tp).unwrap_or_default();
+        tombs.retain(|t| !removed.contains(&t.id) && !t.expired(now));
+        tombs.extend(removed.iter().map(|&id| Tombstone {
+            id,
+            deleted_at: now,
+        }));
+        write_json(&tp, &tombs)?;
+    }
+    write_json(&p, list)
 }
 
 /// Execute one automation host-side and capture stdout/stderr/exit code.

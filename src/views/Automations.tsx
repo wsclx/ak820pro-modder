@@ -17,6 +17,7 @@ import type {
   AutomationKind,
   AutomationRunResult,
   StarterAutomation,
+  SyncReport,
 } from "../types";
 import { formatError } from "../errors";
 import { ICLOUD_SYNC_ENABLED_KEY } from "../components/SyncCard";
@@ -99,19 +100,25 @@ export function Automations() {
       updated_at: now,
       marker_hid: null,
     };
-    await persist([...items, fresh]);
+    await persist((current) => [...current, fresh]);
   }
 
-  async function persist(next: Automation[]) {
+  /**
+   * Apply `change` to the list as it is on disk now, not to `items`: an
+   * iCloud sync may have merged entries in since this view loaded, and the
+   * backend records every entry missing from a save as deleted.
+   */
+  async function persist(change: (current: Automation[]) => Automation[]) {
     setBusy(true);
     setErr(null);
     try {
+      const next = change(await invoke<Automation[]>("list_automations"));
       await invoke("save_automations", { list: next });
       setItems(next);
-      // Auto-push to iCloud on save when the user has opted in. Fire-
-      // and-forget so a sync failure (iCloud paused, network out)
-      // doesn't break the local save UX — the System → Sync card
-      // surfaces the iCloud-side state.
+      // Sync to iCloud on save when the user has opted in. Awaited (we're
+      // still `busy`) so no second save can race the merge writing the
+      // local file. A sync failure (iCloud paused, file not downloaded)
+      // doesn't break the local save — the System → Sync card shows it.
       let cloudOn = false;
       try {
         cloudOn = window.localStorage.getItem(ICLOUD_SYNC_ENABLED_KEY) === "true";
@@ -119,10 +126,15 @@ export function Automations() {
         /* private-browsing — ignore */
       }
       if (cloudOn) {
-        void invoke("icloud_sync_push").catch(() => {
+        try {
+          const report = await invoke<SyncReport>("icloud_sync_push");
+          if (report.local_changed) {
+            setItems(await invoke<Automation[]>("list_automations"));
+          }
+        } catch {
           // Intentional swallow — the user can still see the failure
           // in the Sync card if they navigate to it.
-        });
+        }
       }
     } catch (e) {
       setErr(formatError(e));
@@ -170,17 +182,18 @@ export function Automations() {
 
   async function commitEdit(a: Automation) {
     if (items === null) return;
-    const idx = items.findIndex((x) => x.id === a.id);
     const next: Automation = { ...a, updated_at: Date.now() };
-    const list = idx >= 0 ? items.map((x) => (x.id === a.id ? next : x)) : [...items, next];
-    await persist(list);
+    await persist((current) =>
+      current.some((x) => x.id === a.id)
+        ? current.map((x) => (x.id === a.id ? next : x))
+        : [...current, next],
+    );
     setEditing(null);
   }
 
   async function deleteOne(id: number) {
     if (items === null) return;
-    const list = items.filter((x) => x.id !== id);
-    await persist(list);
+    await persist((current) => current.filter((x) => x.id !== id));
   }
 
   /* --------------------------------------------------------- render -- */
