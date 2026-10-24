@@ -17,6 +17,13 @@ pub enum Error {
     #[error("Feature not yet implemented: {0}")]
     NotImplemented(&'static str),
 
+    #[error(
+        "Unsupported board revision (USB release 0x{release:04x}): this keyboard exposes the \
+         0xFF13 feature-report interface used by newer AK820 Pro revisions, which speak a \
+         protocol this app doesn't support yet"
+    )]
+    UnsupportedRevision { release: u16 },
+
     #[error("Value out of range for {field}: {value} (max {max})")]
     OutOfRange {
         field: &'static str,

@@ -79,6 +79,12 @@ pub fn select_control(candidates: &[DeviceInfo]) -> Option<&DeviceInfo> {
         .or_else(|| candidates.iter().find(|d| d.interface == CONTROL_INTERFACE))
 }
 
+/// `true` when `AK820_IFACE` or `AK820_USAGE_PAGE` picks the control
+/// endpoint by hand.
+fn control_forced_by_env() -> bool {
+    std::env::var_os("AK820_IFACE").is_some() || std::env::var_os("AK820_USAGE_PAGE").is_some()
+}
+
 /// `true` when the enumeration looks like a board revision that speaks
 /// the feature-report protocol instead of ours: it exposes `0xFF13` but
 /// no `0xFF67` TFT collection.
@@ -307,6 +313,14 @@ impl Connection {
                 interface: CONTROL_INTERFACE,
             })?;
         let feature_report_board = looks_like_feature_report_board(&candidates);
+        // On these boards 0xFF68 carries 4096-byte TFT data, not our 0xAA
+        // control frames, so don't write to it unless the user forced an
+        // interface via the env overrides.
+        if feature_report_board && !control_forced_by_env() {
+            return Err(Error::UnsupportedRevision {
+                release: control.release_number,
+            });
+        }
 
         let api = HidApi::new()?;
         let device = api.open_path(&std::ffi::CString::new(control.path.clone()).unwrap())?;
