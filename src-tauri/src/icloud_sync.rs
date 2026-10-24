@@ -417,6 +417,11 @@ fn sync_in(
     resolve: Option<Resolution>,
     dry_run: bool,
 ) -> Result<SyncReport, AppError> {
+    // Held from the first read to the last write, dry runs included, so a
+    // save or marker assignment can't land in between and get overwritten,
+    // and `status` never sees the files halfway through a sync. No test:
+    // provoking the interleaving needs timing tricks.
+    let _lock = automations::lock();
     let dir = root.join(SYNC_SUBDIR);
     let remote_path = dir.join(AUTOMATIONS_FILENAME);
     let remote_tombs_path = dir.join(automations::TOMBSTONES_FILENAME);
@@ -561,7 +566,7 @@ mod tests {
     }
 
     fn save(mac: &Path, list: &[Automation]) {
-        automations::save(mac.to_path_buf(), list).unwrap();
+        automations::save(&automations::lock(), mac.to_path_buf(), list).unwrap();
     }
 
     fn names(list: &[Automation]) -> Vec<&str> {

@@ -497,7 +497,7 @@ async fn save_automations(app: AppHandle, list: Vec<Automation>) -> Result<(), A
         .app_data_dir()
         .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
     let list_clone = list.clone();
-    tokio::task::spawn_blocking(move || automations::save(dir, &list_clone))
+    tokio::task::spawn_blocking(move || automations::save(&automations::lock(), dir, &list_clone))
         .await
         .map_err(|e| AppError::Protocol(format!("join: {e}")))?
         .map_err(AppError::Protocol)?;
@@ -524,6 +524,7 @@ async fn assign_automation_marker(
     let chosen = {
         let dir = dir.clone();
         tokio::task::spawn_blocking(move || -> Result<u8, String> {
+            let lock = automations::lock();
             let mut list = automations::load(dir.clone())?;
             let pos = list
                 .iter()
@@ -546,7 +547,7 @@ async fn assign_automation_marker(
             };
             list[pos].marker_hid = Some(chosen);
             list[pos].updated_at = unix_millis();
-            automations::save(dir, &list)?;
+            automations::save(&lock, dir, &list)?;
             Ok(chosen)
         })
         .await
@@ -569,12 +570,13 @@ async fn unassign_automation_marker(app: AppHandle, id: u64) -> Result<(), AppEr
         .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
     let dir_clone = dir.clone();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let lock = automations::lock();
         let mut list = automations::load(dir_clone.clone())?;
         if let Some(pos) = list.iter().position(|a| a.id == id) {
             if list[pos].marker_hid.is_some() {
                 list[pos].marker_hid = None;
                 list[pos].updated_at = unix_millis();
-                automations::save(dir_clone, &list)?;
+                automations::save(&lock, dir_clone, &list)?;
             }
         }
         Ok(())
@@ -748,6 +750,7 @@ async fn apply_preset(
                 .map_err(|e| AppError::Protocol(format!("app_data_dir: {e}")))?;
             let dir_clone = dir.clone();
             let added = tokio::task::spawn_blocking(move || -> Result<(usize, usize), String> {
+                let lock = automations::lock();
                 let mut list = automations::load(dir_clone.clone())?;
                 let mut added = 0usize;
                 let mut skipped = 0usize;
@@ -769,7 +772,7 @@ async fn apply_preset(
                     });
                     added += 1;
                 }
-                automations::save(dir_clone, &list)?;
+                automations::save(&lock, dir_clone, &list)?;
                 Ok((added, skipped))
             })
             .await

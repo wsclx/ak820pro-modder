@@ -20,6 +20,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, MutexGuard};
 
 /// What kind of host command an automation runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +135,28 @@ pub fn write_json<T: Serialize + ?Sized>(p: &Path, value: &T) -> Result<(), Stri
     Ok(())
 }
 
+/// Serialises every read-modify-write of the library files (list,
+/// tombstones, sync base). Without it an iCloud sync that read the list
+/// before a marker assignment wrote it would put back the old list. Only
+/// taken inside `spawn_blocking`, never held across an `.await`. Plain
+/// reads don't need it: every write is an atomic rename.
+static LIBRARY_LOCK: Mutex<()> = Mutex::new(());
+
+/// Proof that the caller holds [`LIBRARY_LOCK`]; [`save`] demands one so a
+/// new caller can't forget it. Take it before the `load` of a
+/// load-modify-save, not just around the `save`.
+pub struct LibraryGuard {
+    _guard: MutexGuard<'static, ()>,
+}
+
+pub fn lock() -> LibraryGuard {
+    // Writes are atomic, so a panic while holding the lock leaves no torn
+    // file behind; poisoning carries no information here.
+    LibraryGuard {
+        _guard: LIBRARY_LOCK.lock().unwrap_or_else(|e| e.into_inner()),
+    }
+}
+
 /// Load all automations. A missing file is treated as an empty library —
 /// not an error — so the user sees an empty UI on first launch.
 pub fn load(app_data: PathBuf) -> Result<Vec<Automation>, String> {
@@ -144,7 +167,7 @@ pub fn load(app_data: PathBuf) -> Result<Vec<Automation>, String> {
 /// `list` get a tombstone so the iCloud merge spreads the deletion instead
 /// of re-adding the entry from another Mac. Recorded even with sync off:
 /// turning sync on later must not revive what was deleted meanwhile.
-pub fn save(app_data: PathBuf, list: &[Automation]) -> Result<(), String> {
+pub fn save(_lock: &LibraryGuard, app_data: PathBuf, list: &[Automation]) -> Result<(), String> {
     let p = storage_path(app_data.clone());
     // An unreadable old file just yields no tombstones, like before.
     let previous: Vec<Automation> = read_json(&p).unwrap_or_default();
