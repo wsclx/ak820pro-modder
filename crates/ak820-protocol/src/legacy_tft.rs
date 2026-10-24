@@ -1,7 +1,7 @@
 //! TFT transport for the FF13/FF68 feature-report firmware.
 //!
 //! This is deliberately separate from the AA/55 web-driver protocol. The
-//! 04 72 01 image command replaces the stored animation before transfer, so
+//! 04 72 <slot> image command replaces the stored animation before transfer, so
 //! callers must explicitly opt in. No bootloader or firmware commands exist
 //! here. See docs/MACOS-800A.md for sources and hardware verification status.
 
@@ -21,12 +21,27 @@ const MAX_LEGACY_FRAMES: usize = 30;
 /// 1.0.0.5: LCDViewList::GetCurSel()+1, layout gif_count=1). Slot 3 was
 /// acknowledged on an ANSI 800A but showed the image only briefly among
 /// other animation content; slot 1 kept it. From vespovios/ak820pro-modder@3264608.
-const IMAGE_SLOT: u8 = 1;
+pub const DEFAULT_SLOT: u8 = 1;
+
+/// Slots community tools use (1, 2, 3); anything else is refused unsent.
+const KNOWN_SLOTS: std::ops::RangeInclusive<u8> = 1..=3;
+
+fn check_slot(slot: u8) -> Result<()> {
+    if KNOWN_SLOTS.contains(&slot) {
+        return Ok(());
+    }
+    Err(Error::OutOfRange {
+        field: "legacy TFT slot",
+        value: slot.into(),
+        max: *KNOWN_SLOTS.end() as i64,
+    })
+}
 
 #[derive(Serialize, Deserialize)]
 struct Upload {
     target: DeviceInfo,
     animation: TftAnimation,
+    slot: u8,
 }
 
 fn failure(message: impl Into<String>) -> Error {
@@ -62,11 +77,17 @@ pub fn encode_animation(animation: &TftAnimation) -> Result<Vec<u8>> {
 /// blocked IOHIDDeviceSetReport must not freeze the app or keep a hidden
 /// upload running after the timeout. There are no retries or reset commands.
 /// Returns the number of 4096-byte blocks, all of them acknowledged.
-pub(crate) fn upload_in_worker(target: &DeviceInfo, animation: &TftAnimation) -> Result<usize> {
+pub(crate) fn upload_in_worker(
+    target: &DeviceInfo,
+    animation: &TftAnimation,
+    slot: u8,
+) -> Result<usize> {
+    check_slot(slot)?;
     let chunks = encode_animation(animation)?.len() / CHUNK_BYTES;
     let request = serde_json::to_vec(&Upload {
         target: target.clone(),
         animation: animation.clone(),
+        slot,
     })
     .map_err(|e| failure(format!("encode worker request: {e}")))?;
     let mut child = Command::new(std::env::current_exe().map_err(|e| failure(e.to_string()))?)
@@ -119,6 +140,7 @@ pub fn worker_entry() {
             .read_to_end(&mut bytes)
             .map_err(|e| failure(e.to_string()))?;
         let request: Upload = serde_json::from_slice(&bytes).map_err(|e| failure(e.to_string()))?;
+        check_slot(request.slot)?;
         let payload = encode_animation(&request.animation)?;
         let candidates = crate::enumerate()?;
         let target = candidates
@@ -178,7 +200,7 @@ pub fn worker_entry() {
         let chunks = payload.len() / CHUNK_BYTES;
         feature(&control, 0x18, 0, 0)?;
         let transfer = (|| {
-            feature(&control, 0x72, IMAGE_SLOT, chunks as u16)?;
+            feature(&control, 0x72, request.slot, chunks as u16)?;
             for (i, chunk) in payload.chunks_exact(CHUNK_BYTES).enumerate() {
                 let mut report = [0u8; CHUNK_BYTES + 1];
                 report[1..].copy_from_slice(chunk);
@@ -188,17 +210,17 @@ pub fn worker_entry() {
                 let mut ack = [0u8; 64];
                 if data.read_timeout(&mut ack, 1000)? == 0 {
                     return Err(failure(format!(
-                        "No acknowledgement for TFT chunk {}/{}; SAVE was not sent",
+                        "No acknowledgement for TFT chunk {}/{}; COMMIT was not sent",
                         i + 1,
                         chunks
                     )));
                 }
             }
-            feature(&control, 0x02, 0, 0)
+            feature(&control, crate::legacy::COMMIT, 0, 0)
         })();
         if transfer.is_err() {
             // Close the session so the keyboard accepts the next command.
-            let _ = feature(&control, 0xf0, 0, 1);
+            let _ = feature(&control, crate::legacy::FINISH, 0, 1);
         }
         transfer?;
         std::thread::sleep(Duration::from_millis(100));
@@ -262,10 +284,19 @@ mod tests {
             expected[..3].copy_from_slice(&[4, 0x72, 1]);
             expected[8..10].copy_from_slice(&total.to_le_bytes());
             assert_eq!(
-                crate::legacy::control_packet(0x72, IMAGE_SLOT, total),
+                crate::legacy::control_packet(0x72, DEFAULT_SLOT, total),
                 expected
             );
         }
+    }
+
+    #[test]
+    fn only_slots_seen_in_community_tools_are_accepted() {
+        for slot in 1..=3 {
+            assert!(check_slot(slot).is_ok());
+        }
+        assert!(check_slot(0).is_err());
+        assert!(check_slot(4).is_err());
     }
 
     #[test]

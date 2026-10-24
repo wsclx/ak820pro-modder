@@ -8,9 +8,10 @@
 > [MACOS-800A.md](MACOS-800A.md)). Statements about that fork's app (Mac-side
 > controls, setup profiles, the probe examples, test counts) do not describe
 > this repository. Differences in the implementation here: each feature write
-> waits 50 ms before its read, with no extra pause before the next write
-> (vespovios: 35 ms after the write and 35 ms before the next one), and the
-> per-key RGB sessions send START and END with flag 1 instead of 0. The
+> waits 35 ms before and 50 ms after (vespovios: 35 ms each), the per-key RGB
+> sessions send START and END with flag 1 instead of 0, and the code calls
+> SAVE and FINISH `COMMIT` and `FINISH` because their firmware semantics are
+> not settled. The
 > settings transactions were acknowledged on both owners' boards; whether
 > adamauthor re-tested the RGB sessions with flag 1 is not documented.
 

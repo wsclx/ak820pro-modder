@@ -36,7 +36,8 @@ pub async fn upload(
     let _guard = lock().await;
     tokio::task::spawn_blocking(move || -> Result<TftUploadReport, AppError> {
         let tft = Connection::open_tft()?;
-        Ok(tft.upload_tft_animation_confirmed(&anim, allow_legacy)?)
+        let slot = allow_legacy.then_some(ak820_protocol::legacy_tft::DEFAULT_SLOT);
+        Ok(tft.upload_tft_animation_confirmed(&anim, slot)?)
     })
     .await
     .map_err(|e| AppError::Protocol(format!("join TFT upload: {e}")))?

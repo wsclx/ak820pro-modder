@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_bad_input_before_hardware_and_never_saves_a_failed_bank() {
+    fn rejects_bad_input_before_hardware_and_never_commits_a_failed_bank() {
         let mut m = CustomLedMap::default();
         m.leds.pop();
         assert!(encode(&m).is_err());

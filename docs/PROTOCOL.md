@@ -214,7 +214,7 @@ The web driver sets the RTC behind the stock clock page with a 10-byte `SET_TEMP
 [0x5A, 0x01, 0x5A, year % 100, month, day, hour, minute, second, weekday]
 ```
 
-Month is 1–12, weekday is Sunday = 0 … Saturday = 6. Family-B boards use the feature-report transaction `04 18` → `04 28` → `00 01 5A YY MM DD hh mm ss 00 04 … AA 55` → `04 02` (SAVE) → `04 F0` (END) with the same date core. `Connection::set_tft_datetime` / `ak820 tft sync-time` pick the right one per board; the cmd-52 path is not yet hardware-verified on firmware 1.07.
+Month is 1–12, weekday is Sunday = 0 … Saturday = 6. Family-B boards use the feature-report transaction `04 18` → `04 28` → `00 01 5A YY MM DD hh mm ss 00 04 … AA 55` → `04 02` (`COMMIT`) → `04 F0` (`FINISH`; semantics of both unsettled, see [MACOS-800A.md](MACOS-800A.md#feature-transactions)) with the same date core. `Connection::set_tft_datetime` / `ak820 tft sync-time` pick the right one per board; the cmd-52 path is not yet hardware-verified on firmware 1.07.
 
 **Per-frame delay encoding**:
 - `delay[i] * 5` means the source supplies an integer in 5-ms units. To replicate a GIF with 100 ms / frame, send `delay = 20` (because 20 × 5 = 100 ms). Max representable: 255 × 5 = 1 275 ms / frame.

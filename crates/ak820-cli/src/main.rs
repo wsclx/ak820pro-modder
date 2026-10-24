@@ -81,6 +81,9 @@ enum TftCmd {
         /// Permit the older protocol to replace the stored animation.
         #[arg(long)]
         allow_legacy: bool,
+        /// Family-B destination slot (1–3), used with --allow-legacy.
+        #[arg(long, default_value_t = ak820_protocol::legacy_tft::DEFAULT_SLOT)]
+        slot: u8,
         #[arg(long)]
         dry_run: bool,
     },
@@ -260,8 +263,9 @@ fn main() -> Result<()> {
             path,
             fit,
             allow_legacy,
+            slot,
             dry_run,
-        }) => cmd_tft_upload(cli.json, &path, &fit, allow_legacy, dry_run),
+        }) => cmd_tft_upload(cli.json, &path, &fit, allow_legacy.then_some(slot), dry_run),
         Cmd::Tft(TftCmd::Solid { color }) => cmd_tft_solid(cli.json, &color),
         Cmd::Tft(TftCmd::Cycle { delay }) => cmd_tft_cycle(cli.json, delay),
         Cmd::Tft(TftCmd::SelectIndex { index }) => cmd_tft_select_index(cli.json, index),
@@ -517,7 +521,7 @@ fn cmd_tft_upload(
     json: bool,
     path: &std::path::Path,
     fit: &str,
-    allow_legacy: bool,
+    legacy_slot: Option<u8>,
     dry_run: bool,
 ) -> Result<()> {
     use ak820_protocol::commands::tft_image::{animation_from_bytes, FitMode};
@@ -526,12 +530,12 @@ fn cmd_tft_upload(
     let legacy = ak820_protocol::legacy_tft::encode_animation(&anim)?;
     let report = serde_json::json!({
         "frames": anim.frames.len(), "width": 128, "height": 128,
-        "legacy_chunks": legacy.len() / 4096, "dry_run": dry_run,
+        "legacy_chunks": legacy.len() / 4096, "legacy_slot": legacy_slot, "dry_run": dry_run,
         "delays_ms": anim.frames.iter().map(|f| f.delay_ms).collect::<Vec<_>>(),
     });
     if !dry_run {
         let tft = ak820_protocol::Connection::open_tft()?;
-        tft.upload_tft_animation_confirmed(&anim, allow_legacy)?;
+        tft.upload_tft_animation_confirmed(&anim, legacy_slot)?;
     }
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);

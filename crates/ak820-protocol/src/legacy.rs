@@ -117,11 +117,17 @@ pub fn clock_packet(now: &TftDateTime) -> Result<[u8; 64]> {
     Ok(packet)
 }
 
+/// Pause before every feature write: the vendor driver's `cmd_delaytime`.
+/// vespovios and gha-projects/ak820-mac both saw the final `04 02` refused or
+/// ignored without it. The 50 ms before the read is adamauthor's tested value.
+const CMD_DELAY: Duration = Duration::from_millis(35);
+
 /// One raw 64-byte feature exchange: report ID 0, payload, then the reply
 /// payload. Status is checked by callers with [`validate_ack`].
 pub(crate) fn exchange(device: &HidDevice, packet: &[u8; 64]) -> Result<[u8; 64]> {
     let mut wire = [0u8; 65];
     wire[1..].copy_from_slice(packet);
+    std::thread::sleep(CMD_DELAY);
     device.send_feature_report(&wire)?;
     std::thread::sleep(Duration::from_millis(50));
     let mut response = [0u8; 65];
@@ -145,10 +151,15 @@ pub(crate) fn validate_ack(reply: &[u8; 64], command: u8) -> Result<()> {
 }
 
 pub(crate) const START: u8 = 0x18;
-pub(crate) const SAVE: u8 = 0x02;
-pub(crate) const END: u8 = 0xf0;
+/// What `04 02` and `04 F0` do inside the firmware is not established.
+/// adamauthor and vespovios call them SAVE and END/FINISH; gha-projects/
+/// ak820-mac calls `04 F0` "save to flash" and `04 02` a commit with a
+/// checksum. Hence the neutral names. Known: the vendor driver sends `02`
+/// before `F0`, and without `02` the keyboard answers `F0` with FF.
+pub(crate) const COMMIT: u8 = 0x02;
+pub(crate) const FINISH: u8 = 0xf0;
 
-/// For up to ~2 s after a session that ended without SAVE (another app, an
+/// For up to ~2 s after a session that ended without COMMIT (another app, an
 /// older build, an interrupted write) START answers status FF or an empty
 /// report. Measured on 0C45:800A; the firmware accepts START once settled.
 const START_ATTEMPTS: usize = 10;
@@ -173,10 +184,11 @@ pub(crate) fn start_with_flag(send: &mut Send, flag: u16) -> Result<()> {
     validate_ack(&send(&control_packet(START, 0, flag))?, START)
 }
 
-/// START, the command preamble, its data packets, SAVE, then END. END is
-/// sent after a failure too. Hardware-tested: END straight after data
-/// returns FF and leaves the keyboard refusing commands for ~2 s; with
-/// SAVE first every step returns 01 and the next write is accepted at once.
+/// START, the command preamble, its data packets, COMMIT, then FINISH.
+/// FINISH is sent after a failure too. Hardware-tested (adamauthor): FINISH
+/// straight after data returns FF and leaves the keyboard refusing commands
+/// for ~2 s; with COMMIT first every step returns 01 and the next write is
+/// accepted at once.
 /// Data packets echo their bytes and carry no status.
 pub(crate) fn transaction(
     send: &mut Send,
@@ -189,9 +201,9 @@ pub(crate) fn transaction(
         for packet in data {
             send(&packet)?;
         }
-        validate_ack(&send(&control_packet(SAVE, 0, 0))?, SAVE)
+        validate_ack(&send(&control_packet(COMMIT, 0, 0))?, COMMIT)
     })();
-    let finished = send(&control_packet(END, 0, 1)).and_then(|r| validate_ack(&r, END));
+    let finished = send(&control_packet(FINISH, 0, 1)).and_then(|r| validate_ack(&r, FINISH));
     result.and(finished)
 }
 
@@ -332,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn transaction_saves_before_end_and_always_ends() {
+    fn transaction_commits_before_finish_and_always_finishes() {
         let mut sent = Vec::new();
         transaction(
             &mut |p| {
@@ -350,12 +362,12 @@ mod tests {
                 (4, START, 1),
                 (4, 0x13, 1),
                 (7, 7, 7),
-                (4, SAVE, 0),
-                (4, END, 1)
+                (4, COMMIT, 0),
+                (4, FINISH, 1)
             ]
         );
 
-        // A refused preamble stops before data and SAVE but still ends.
+        // A refused preamble stops before data and COMMIT but still finishes.
         let mut sent = Vec::new();
         let result = transaction(
             &mut |p| {
@@ -369,7 +381,7 @@ mod tests {
         );
         assert!(result.is_err());
         assert_eq!(sent.len(), 3);
-        assert_eq!(sent[2][1], END);
+        assert_eq!(sent[2][1], FINISH);
     }
 
     #[test]

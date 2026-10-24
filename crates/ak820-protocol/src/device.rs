@@ -888,25 +888,27 @@ impl Connection {
     ///
     /// Family B is refused here; see [`Self::upload_tft_animation_confirmed`].
     pub fn upload_tft_animation(&self, anim: &TftAnimation) -> Result<TftUploadReport> {
-        self.upload_tft_animation_confirmed(anim, false)
+        self.upload_tft_animation_confirmed(anim, None)
     }
 
     /// Like [`Self::upload_tft_animation`], but on family B also uploads
-    /// when `allow_legacy` is set. There the `04 72` command replaces the
-    /// animation stored in flash before any data arrives, so callers must
-    /// get explicit consent first. Family B uploads run in a worker process
-    /// and fail unless every chunk is acknowledged.
+    /// when `legacy_slot` is set: the user's consent to replace that slot
+    /// (usually [`crate::legacy_tft::DEFAULT_SLOT`]). There the `04 72`
+    /// command replaces the stored animation before any data arrives, so
+    /// callers must get explicit consent first. Family-B uploads run in a
+    /// worker process and fail unless every chunk is acknowledged. Family A
+    /// ignores `legacy_slot`.
     pub fn upload_tft_animation_confirmed(
         &self,
         anim: &TftAnimation,
-        allow_legacy: bool,
+        legacy_slot: Option<u8>,
     ) -> Result<TftUploadReport> {
         if self.info.protocol == DeviceProtocol::LegacyFeature {
-            if !allow_legacy {
+            let Some(slot) = legacy_slot else {
                 return Err(Error::NotImplemented("Legacy TFT upload needs confirmation: it replaces the stored animation. Use the TFT upload confirmation or CLI --allow-legacy."));
-            }
+            };
             let started = std::time::Instant::now();
-            let chunks = crate::legacy_tft::upload_in_worker(&self.info, anim)?;
+            let chunks = crate::legacy_tft::upload_in_worker(&self.info, anim, slot)?;
             return Ok(TftUploadReport {
                 chunks,
                 acknowledged: chunks,
@@ -1036,7 +1038,7 @@ impl Connection {
     /// buffer (the standard 20 modes ignore it).
     pub fn set_custom_led(&self, map: &CustomLedMap) -> Result<()> {
         if self.info.protocol == DeviceProtocol::LegacyFeature {
-            // ANSI slot table; each write is saved, so not for streaming.
+            // ANSI slot table; each write persists, so not for streaming.
             return crate::legacy_rgb::write_bank(&self.device, self.info.pid, map);
         }
         let payload = map.encode();

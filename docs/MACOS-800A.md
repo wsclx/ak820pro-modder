@@ -54,7 +54,9 @@ preset that requires an unsupported onboard key table.
 
 Every feature buffer is report ID 0 followed by 64 payload bytes. Control
 payloads begin `04 command subcommand`, with a little-endian value at bytes
-8–9. Each send has a 50 ms delay and a feature response; control echoes must
+8–9. Each send waits 35 ms first (the vendor driver's `cmd_delaytime`;
+vespovios and gha-projects/ak820-mac saw the final `04 02` refused or ignored
+without it), then 50 ms before its feature response; control echoes must
 match. Every setting ends with `02(value=0)` (SAVE) and `F0(value=1)` (END);
 see [Feature transactions](#feature-transactions). Lighting uses
 `18(value=1)`, `13(value=1)`, mode data. Mode data contains mode, RGB,
@@ -120,6 +122,9 @@ which was acknowledged and played on this keyboard. On another ANSI 800A,
 slot 3 showed a static image only briefly among other animation content and
 slot 1 kept it; see vespovios/ak820pro-modder@3264608 and its
 docs/COMPATIBILITY.md. Slot 1 still needs to be confirmed on this keyboard.
+Other tools use 1 (gha-projects, DarkTiengo/ak820ctl) or 2
+(allshouldbeready), so the slot is a parameter: default 1, the CLI takes
+`--slot 1|2|3`, other values are refused before anything is sent.
 
 ## Legacy per-key RGB
 
@@ -148,6 +153,12 @@ session: START (04 18), the command preamble, its data packets, SAVE
 with status 1 in byte 3; data replies echo their bytes and are not checked.
 END is sent after a failure too.
 
+Naming: this document keeps adamauthor's labels SAVE (`04 02`) and END
+(`04 F0`). What either does inside the firmware is not established:
+gha-projects/ak820-mac calls `04 F0` "save to flash" and `04 02` a commit
+with a checksum. The code therefore names them `COMMIT` and `FINISH`
+(`crates/ak820-protocol/src/legacy.rs`).
+
 Measured on this keyboard: without SAVE, END answers FF and for about 2 s
 START, the preamble and any data are refused (status FF or an all-zero
 report). Earlier builds wrote effects that way, so quick successive
@@ -158,7 +169,8 @@ up to 3 s for a keyboard left busy by another program.
 
 Persistence, tested: static green with SAVE, then static red without SAVE
 (END answered FF), then a full power-off. The keyboard came back red, so a
-lighting write is stored even without SAVE; there is no RAM-only write.
+lighting write is stored even without SAVE. Both runs still sent `04 F0`;
+whether a write without `04 F0` would stay in RAM has not been tested.
 Host-driven lighting that changes often (notifications, per-app colours,
 audio-reactive streaming) therefore wears the flash, and so does every
 image upload, which rewrites the stored animation. The app only writes on

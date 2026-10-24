@@ -53,8 +53,9 @@ This firmware revision ("family B": an `0xFF13` feature-report interface and
 no `0xFF67`) connects on macOS. Lighting effects, per-key RGB (ANSI layout),
 local clock sync, sleep settings and battery status use feature reports;
 image/GIF upload has a separate path that asks for confirmation first,
-because it replaces the animation stored on the keyboard. The keyboard saves
-every write to flash, so the app writes only when you press Apply. Key
+because it replaces the animation stored on the keyboard. Lighting writes
+survive a power-off there (measured by adamauthor), so the app writes only
+when you press Apply. Key
 remapping and keyboard macros have explicit Mac-only fallbacks with
 readback/undo and app-local recording. Onboard key/Fn maps, onboard macros,
 built-in TFT animations and live TFT or audio-reactive streams remain
