@@ -59,8 +59,8 @@ impl FitMode {
     }
 }
 
-/// Frame-delay caps. The protocol allows up to 255 × 5 ms = 1275 ms per
-/// frame slot, and `MAX_FRAMES` total — we mirror those for GIFs but
+/// Frame-delay caps. The protocol allows up to 255 × 2 ms = 510 ms per
+/// frame slot (longer GIF delays are clamped to that on encode), and `MAX_FRAMES` total — we mirror those for GIFs but
 /// also clamp ridiculously short delays (e.g. 0 ms or 10 ms) to a sane
 /// minimum so the panel isn't asked to refresh faster than it can.
 const MIN_FRAME_DELAY_MS: u16 = 40; // 25 fps ceiling

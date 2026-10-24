@@ -170,7 +170,7 @@ Source: AJAZZ online driver `index-CGDyjcPg.js`, function `Rt()`.
 +-------------------------------------+
 |  256-byte frame-delay header       |
 |    byte 0     = frame count N      |
-|    byte 1..N-1 = delay[i] * 5  ms  |   (per-frame delay, units of 5 ms)
+|    byte 1..N-1 = delay[i]          |   (per-frame delay, units of 2 ms)
 |    byte N     = 0x00  (terminator) |
 |    byte N+1..255 = 0xFF (pad)      |
 +-------------------------------------+
@@ -217,7 +217,7 @@ The web driver sets the RTC behind the stock clock page with a 10-byte `SET_TEMP
 Month is 1–12, weekday is Sunday = 0 … Saturday = 6. Family-B boards use the feature-report transaction `04 18` → `04 28` → `00 01 5A YY MM DD hh mm ss 00 04 … AA 55` → `04 02` (`COMMIT`) → `04 F0` (`FINISH`; semantics of both unsettled, see [MACOS-800A.md](MACOS-800A.md#feature-transactions)) with the same date core. `Connection::set_tft_datetime` / `ak820 tft sync-time` pick the right one per board; the cmd-52 path is not yet hardware-verified on firmware 1.07.
 
 **Per-frame delay encoding**:
-- `delay[i] * 5` means the source supplies an integer in 5-ms units. To replicate a GIF with 100 ms / frame, send `delay = 20` (because 20 × 5 = 100 ms). Max representable: 255 × 5 = 1 275 ms / frame.
+- The web driver writes `delay * 5`, where `delay` is the GIF frame delay in centiseconds, so one header unit is 2 ms. A GIF with 100 ms / frame becomes header value 50. Max representable: 255 × 2 = 510 ms / frame. This used to read "units of 5 ms" here, which made GIFs play up to 2.5 times too fast; fromagge/ak820-screen measured the 2-ms unit on firmware 1.16, and the family-B tools use it too. The display draws no faster than about 60 ms per frame regardless.
 - Only N−1 delays are sent in the header (one per transition between frames). The N-th slot is the terminator `0x00`.
 
 **Capacity** (from device-info `tftMaxFrames`): the AK820 Pro reports a TFT capacity around 30+ frames per upload (Phase 2 probe shows `tft_max_frames` directly). Larger GIFs need decimation client-side.
