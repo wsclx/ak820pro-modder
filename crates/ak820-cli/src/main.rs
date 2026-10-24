@@ -717,17 +717,6 @@ fn cmd_rgb_rainbow(json: bool) -> Result<()> {
 fn apply_custom(json: bool, map: &CustomLedMap, label: &str) -> Result<()> {
     let conn = ak820_protocol::Connection::open_control()?;
 
-    if conn.info().protocol == ak820_protocol::device::DeviceProtocol::LegacyFeature {
-        // Feature firmware selects mode 80 and writes the ANSI bank itself.
-        conn.set_feature_custom_lighting(map, 5)?;
-        if json {
-            println!("{}", serde_json::json!({"ok": true, "label": label}));
-        } else {
-            println!("Per-key RGB applied: {label} (feature firmware, ANSI slot table)");
-        }
-        return Ok(());
-    }
-
     // Switch the active lighting mode to 0x80 (Custom) so the firmware
     // reads from the per-key buffer. Brightness/speed/colour fields are
     // ignored in this mode but we set sensible values anyway.

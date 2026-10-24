@@ -26,6 +26,7 @@ import { type PhysicalKey } from "../data/layouts";
 import { useLayout } from "../data/layouts/use-layout";
 import type { CustomLedMap, LedColor, LightingConfig } from "../types";
 import { formatError } from "../errors";
+import { useCapabilities } from "../capabilities";
 
 interface Props {
   /** Brightness + speed from the parent Lighting view — unused by the
@@ -40,6 +41,7 @@ const APPLY_DEBOUNCE_MS = 120;
 
 export function CustomLightingPaint({ inheritedConfig }: Props) {
   const { layout } = useLayout();
+  const legacy = useCapabilities()?.protocol === "legacy_feature";
   const layoutRows = layout.rows;
   const [remote, setRemote] = useState<CustomLedMap | null>(null);
   const [draft, setDraft] = useState<LedColor[]>(() => emptyMap());
@@ -48,12 +50,17 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [lastApplied, setLastApplied] = useState<string | null>(null);
-  const [autoApply, setAutoApply] = useState(true);
+  const [autoApplyChoice, setAutoApply] = useState(true);
+  // Family B saves every colour-bank write to flash: paint first, then Apply.
+  const autoApply = autoApplyChoice && !legacy;
 
   const inflight = useRef(false);
   const queued = useRef<LedColor[] | null>(null);
   const pending = useRef<number | null>(null);
   const initRef = useRef(false);
+  // Family B keeps rendering the bank once in custom mode, so later writes
+  // skip the mode switch (one flash write instead of two).
+  const modeSelected = useRef(false);
 
   /* ----- IO ---------------------------------------------------------- */
 
@@ -90,9 +97,13 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
         // 1. write the per-key buffer
         await invoke("set_custom_led", { map: { leds: map } });
         // 2. flip the firmware to render from it
-        await invoke("apply_lighting", {
-          config: { ...inheritedConfig, mode: "custom" } satisfies LightingConfig,
-        });
+        if (!legacy || !modeSelected.current) {
+          await invoke("apply_lighting", {
+            config: { ...inheritedConfig, mode: "custom" } satisfies LightingConfig,
+          });
+          modeSelected.current = true;
+        }
+        setRemote({ leds: map });
         setLastApplied(new Date().toLocaleTimeString());
       } catch (e) {
         setErr(formatError(e));
@@ -104,7 +115,7 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
         if (drain) void apply(drain);
       }
     },
-    [inheritedConfig],
+    [inheritedConfig, legacy],
   );
 
   function scheduleApply(map: LedColor[]) {
@@ -179,14 +190,11 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
           {lastApplied && (
             <span className="text-xs text-fg-3">applied {lastApplied}</span>
           )}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void refresh()}
-            disabled={busy}
-          >
-            Reload
-          </Button>
+          {!legacy && (
+            <Button size="sm" variant="ghost" onClick={() => void refresh()} disabled={busy}>
+              Reload
+            </Button>
+          )}
           <Button
             size="sm"
             variant={autoApply || !dirty ? "ghost" : "primary"}
@@ -226,15 +234,17 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
         <Button size="sm" variant="ghost" onClick={() => clearAll()} disabled={busy}>
           Clear all
         </Button>
-        <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-fg-2">
-          <input
-            type="checkbox"
-            checked={autoApply}
-            onChange={(e) => setAutoApply(e.target.checked)}
-            className="h-3.5 w-3.5 accent-accent-500"
-          />
-          Auto-apply
-        </label>
+        {!legacy && (
+          <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-fg-2">
+            <input
+              type="checkbox"
+              checked={autoApply}
+              onChange={(e) => setAutoApply(e.target.checked)}
+              className="h-3.5 w-3.5 accent-accent-500"
+            />
+            Auto-apply
+          </label>
+        )}
       </div>
 
       <PaintSurface
@@ -246,6 +256,15 @@ export function CustomLightingPaint({ inheritedConfig }: Props) {
           paintSlot(slot, paintColor);
         }}
       />
+
+      {legacy && (
+        <p className="mt-3 text-xs text-fg-3">
+          Paint the keys, then press Apply: every write is saved to the
+          keyboard's memory. This keyboard can't report its colours, so the
+          editor starts black and Apply writes the whole map. Colours follow
+          the ANSI LED layout; the ISO key left of Z is not mapped.
+        </p>
+      )}
 
       <p className="mt-4 border-t border-line/60 pt-3 text-xs text-fg-3">
         Per-key RGB is the lighting mode at byte <Mono>0x80</Mono>. The 20

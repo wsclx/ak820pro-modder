@@ -331,9 +331,8 @@ pub(crate) fn ensure_open(slot: &mut Option<Connection>) -> Result<&Connection, 
 
 #[tauri::command]
 fn get_capabilities() -> Result<ak820_protocol::capabilities::DeviceCapabilities, AppError> {
-    let device = ak820_protocol::enumerate()?
-        .into_iter()
-        .find(|d| d.is_control)
+    let candidates = ak820_protocol::enumerate()?;
+    let device = ak820_protocol::select_control(&candidates)
         .ok_or_else(|| AppError::Protocol("Keyboard is not connected".into()))?;
     Ok(ak820_protocol::capabilities::DeviceCapabilities::for_protocol(device.protocol))
 }
@@ -592,6 +591,10 @@ async fn get_custom_led(state: State<'_, Arc<ConnState>>) -> Result<CustomLedMap
     state
         .with(|slot| {
             let conn = ensure_open(slot)?;
+            // Family B has no colour-bank read-back; the editor starts black.
+            if conn.info().protocol == ak820_protocol::device::DeviceProtocol::LegacyFeature {
+                return Ok(CustomLedMap::default());
+            }
             Ok(conn.get_custom_led()?)
         })
         .await
@@ -1047,7 +1050,9 @@ async fn audio_reactive_start(
     let audio = audio.inner().clone();
     let conn = conn.inner().clone();
     if !get_capabilities()?.audio_reactive {
-        return Err(AppError::Protocol("Audio-reactive lighting needs the per-key RGB protocol, which is not decoded for this firmware".into()));
+        return Err(AppError::Protocol(
+            audio_reactive::STREAMING_UNAVAILABLE.into(),
+        ));
     }
     audio.start(conn).await
 }

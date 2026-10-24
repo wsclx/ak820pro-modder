@@ -672,6 +672,14 @@ impl Connection {
     /// Apply a complete lighting configuration.
     pub fn set_lighting(&self, cfg: &LightingConfig) -> Result<()> {
         if self.info.protocol == DeviceProtocol::LegacyFeature {
+            if cfg.mode == lighting::Mode::Custom {
+                // Mode 80 renders the colour bank stored by set_custom_led.
+                return crate::legacy_rgb::select_custom(
+                    &self.device,
+                    self.info.pid,
+                    cfg.brightness.min(5),
+                );
+            }
             return crate::legacy::set_lighting(&self.device, self.info.pid, cfg);
         }
         let payload = lighting::led_effect_payload(cfg);
@@ -1014,6 +1022,11 @@ impl Connection {
 
     /// Read the 128-LED per-key colour map.
     pub fn get_custom_led(&self) -> Result<CustomLedMap> {
+        if self.info.protocol == DeviceProtocol::LegacyFeature {
+            return Err(Error::NotImplemented(
+                "Feature-report firmware has no colour-bank read-back",
+            ));
+        }
         let payload = self.get_many_at(cmd::GET_CUSTOM_LED_DATA, 0, CUSTOM_LED_BYTES)?;
         Ok(CustomLedMap::decode(&payload))
     }
@@ -1022,21 +1035,13 @@ impl Connection {
     /// switching the active lighting effect to one that reads from this
     /// buffer (the standard 20 modes ignore it).
     pub fn set_custom_led(&self, map: &CustomLedMap) -> Result<()> {
+        if self.info.protocol == DeviceProtocol::LegacyFeature {
+            // ANSI slot table; each write is saved, so not for streaming.
+            return crate::legacy_rgb::write_bank(&self.device, self.info.pid, map);
+        }
         let payload = map.encode();
         info!(bytes = payload.len(), "SET_CUSTOM_LED_DATA");
         self.set_many_at(cmd::SET_CUSTOM_LED_DATA, 0, &payload, true)
-    }
-
-    /// Write the ANSI per-key colour bank on feature-report firmware and
-    /// switch to custom mode 80. Each call commits to the keyboard, so it is
-    /// for one-off writes, not streaming effects.
-    pub fn set_feature_custom_lighting(&self, map: &CustomLedMap, brightness: u8) -> Result<()> {
-        if self.info.protocol != DeviceProtocol::LegacyFeature {
-            return Err(Error::NotImplemented(
-                "Feature custom RGB on an output-report keyboard",
-            ));
-        }
-        crate::legacy_rgb::apply(&self.device, self.info.pid, map, brightness)
     }
 
     /// Read the older firmware's battery status without synthesizing modern fields.

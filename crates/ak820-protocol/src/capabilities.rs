@@ -34,7 +34,7 @@ impl DeviceCapabilities {
             keymap: web,
             fn_keymap: web,
             macros: web,
-            per_key_rgb: web,
+            per_key_rgb: true,
             tft_builtin: web,
             now_playing_tft: web,
             audio_reactive: web,
@@ -62,6 +62,7 @@ mod tests {
         );
         let legacy = DeviceCapabilities::for_protocol(DeviceProtocol::LegacyFeature);
         assert!(legacy.lighting && legacy.clock_sync && legacy.sleep_timer);
-        assert!(!legacy.keymap && !legacy.macros && !legacy.per_key_rgb && !legacy.game_mode);
+        assert!(legacy.per_key_rgb && !legacy.audio_reactive);
+        assert!(!legacy.keymap && !legacy.macros && !legacy.game_mode);
     }
 }

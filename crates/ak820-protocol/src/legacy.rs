@@ -13,6 +13,9 @@ use std::time::Duration;
 
 /// Serialize complete feature transactions with the TFT worker, including
 /// across CLI and GUI processes. Dropping/terminating a process releases it.
+/// Longest image upload observed is ~8 s (49 blocks).
+const LOCK_WAIT: Duration = Duration::from_secs(12);
+
 pub(crate) struct TransactionLock {
     _file: File,
 }
@@ -27,11 +30,17 @@ impl TransactionLock {
             .write(true)
             .open(path)
             .map_err(|e| Error::UnexpectedResponse(format!("open transaction lock: {e}")))?;
-        fs2::FileExt::try_lock_exclusive(&file).map_err(|_| {
-            Error::UnexpectedResponse(
-                "Another keyboard operation is running; wait for it to finish".into(),
-            )
-        })?;
+        // Wait for a short write or an image upload in another process
+        // (TFT worker, CLI) instead of dropping this operation.
+        let deadline = std::time::Instant::now() + LOCK_WAIT;
+        while fs2::FileExt::try_lock_exclusive(&file).is_err() {
+            if std::time::Instant::now() >= deadline {
+                return Err(Error::UnexpectedResponse(
+                    "Another keyboard operation is running; wait for it to finish".into(),
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
         Ok(Self { _file: file })
     }
 }
@@ -57,7 +66,7 @@ pub fn lighting_packet(config: &LightingConfig) -> Result<[u8; 64]> {
     }
     if config.mode == Mode::Custom {
         return Err(Error::NotImplemented(
-            "Per-key RGB format is not verified for feature-report firmware",
+            "Custom mode is selected through legacy_rgb, not the effect packet",
         ));
     }
     let (mode, speed, brightness) = match config.mode {
@@ -108,44 +117,101 @@ pub fn clock_packet(now: &TftDateTime) -> Result<[u8; 64]> {
     Ok(packet)
 }
 
-pub(crate) fn send(device: &HidDevice, packet: &[u8; 64]) -> Result<[u8; 65]> {
+/// One raw 64-byte feature exchange: report ID 0, payload, then the reply
+/// payload. Status is checked by callers with [`validate_ack`].
+pub(crate) fn exchange(device: &HidDevice, packet: &[u8; 64]) -> Result<[u8; 64]> {
     let mut wire = [0u8; 65];
     wire[1..].copy_from_slice(packet);
     device.send_feature_report(&wire)?;
     std::thread::sleep(Duration::from_millis(50));
     let mut response = [0u8; 65];
-    let n = device.get_feature_report(&mut response)?;
-    if n != response.len() {
+    if device.get_feature_report(&mut response)? != response.len() {
         return Err(Error::UnexpectedResponse(
             "Short feature-report handshake".into(),
         ));
     }
-    if packet[0] == 4 && response[1..3] != packet[..2] {
+    Ok(response[1..].try_into().unwrap())
+}
+
+/// Command replies echo `04 <command>` and carry status 1 in byte 3.
+pub(crate) fn validate_ack(reply: &[u8; 64], command: u8) -> Result<()> {
+    if reply[0] != 4 || reply[1] != command || reply[3] != 1 {
         return Err(Error::UnexpectedResponse(format!(
-            "Wrong feature handshake for command {:02x}",
-            packet[1]
+            "Keyboard did not acknowledge command {command:02x}: {}",
+            hex::encode(&reply[..9])
         )));
     }
-    Ok(response)
+    Ok(())
+}
+
+pub(crate) const START: u8 = 0x18;
+pub(crate) const SAVE: u8 = 0x02;
+pub(crate) const END: u8 = 0xf0;
+
+/// For up to ~2 s after a session that ended without SAVE (another app, an
+/// older build, an interrupted write) START answers status FF or an empty
+/// report. Measured on 0C45:800A; the firmware accepts START once settled.
+const START_ATTEMPTS: usize = 10;
+const START_RETRY_DELAY: Duration = Duration::from_millis(300);
+
+pub(crate) type Send<'a> = dyn FnMut(&[u8; 64]) -> Result<[u8; 64]> + 'a;
+
+fn start(send: &mut Send) -> Result<()> {
+    start_with_flag(send, 1)
+}
+
+/// The image upload opens its session with flag 0, settings with flag 1.
+pub(crate) fn start_with_flag(send: &mut Send, flag: u16) -> Result<()> {
+    for _ in 1..START_ATTEMPTS {
+        let reply = send(&control_packet(START, 0, flag))?;
+        let busy = reply.iter().all(|&b| b == 0) || reply[..4] == [4, START, 0, 0xff];
+        if !busy {
+            return validate_ack(&reply, START);
+        }
+        std::thread::sleep(START_RETRY_DELAY);
+    }
+    validate_ack(&send(&control_packet(START, 0, flag))?, START)
+}
+
+/// START, the command preamble, its data packets, SAVE, then END. END is
+/// sent after a failure too. Hardware-tested: END straight after data
+/// returns FF and leaves the keyboard refusing commands for ~2 s; with
+/// SAVE first every step returns 01 and the next write is accepted at once.
+/// Data packets echo their bytes and carry no status.
+pub(crate) fn transaction(
+    send: &mut Send,
+    command: [u8; 64],
+    data: &mut dyn Iterator<Item = [u8; 64]>,
+) -> Result<()> {
+    let result = (|| {
+        start(send)?;
+        validate_ack(&send(&command)?, command[1])?;
+        for packet in data {
+            send(&packet)?;
+        }
+        validate_ack(&send(&control_packet(SAVE, 0, 0))?, SAVE)
+    })();
+    let finished = send(&control_packet(END, 0, 1)).and_then(|r| validate_ack(&r, END));
+    result.and(finished)
+}
+
+fn write(device: &HidDevice, pid: u16, command: [u8; 64], data: [u8; 64]) -> Result<()> {
+    let _guard = TransactionLock::acquire(pid)?;
+    transaction(
+        &mut |p| exchange(device, p),
+        command,
+        &mut std::iter::once(data),
+    )
 }
 
 pub(crate) fn set_lighting(device: &HidDevice, pid: u16, config: &LightingConfig) -> Result<()> {
     let packet = lighting_packet(config)?;
-    let _guard = TransactionLock::acquire(pid)?;
-    send(device, &control_packet(0x18, 0, 1))?;
-    send(device, &control_packet(0x13, 0, 1))?;
-    send(device, &packet)?;
-    send(device, &control_packet(0xF0, 0, 1))?;
-    Ok(())
+    write(device, pid, control_packet(0x13, 0, 1), packet)
 }
 
 pub(crate) fn set_sleep(device: &HidDevice, pid: u16, minutes: u8) -> Result<()> {
     let packet = sleep_packet(minutes)?;
-    let _guard = TransactionLock::acquire(pid)?;
-    send(device, &control_packet(0x18, 0, 1))?;
-    send(device, &control_packet(0x17, 1, 1))?;
-    send(device, &packet)?;
-    Ok(())
+    write(device, pid, control_packet(0x17, 1, 1), packet)
 }
 
 /// Resolve the host-local date and time without changing system timezone.
@@ -186,12 +252,7 @@ pub fn local_now() -> Result<time::OffsetDateTime> {
 
 pub(crate) fn sync_clock(device: &HidDevice, pid: u16, now: &TftDateTime) -> Result<()> {
     let packet = clock_packet(now)?;
-    let _guard = TransactionLock::acquire(pid)?;
-    send(device, &control_packet(0x18, 0, 1))?;
-    send(device, &control_packet(0x28, 0, 1))?;
-    send(device, &packet)?;
-    send(device, &control_packet(0xF0, 0, 1))?;
-    Ok(())
+    write(device, pid, control_packet(0x28, 0, 1), packet)
 }
 
 /// An absent reading stays absent. FF is the wired/full sentinel, not a
@@ -262,6 +323,84 @@ mod tests {
         assert_eq!(sleep_packet(30).unwrap()[8], 3);
         assert_eq!(sleep_packet(5).unwrap()[8], 2);
         assert!(sleep_packet(10).is_err());
+    }
+
+    fn ack(p: &[u8; 64]) -> Result<[u8; 64]> {
+        let mut r = *p;
+        r[3] = 1;
+        Ok(r)
+    }
+
+    #[test]
+    fn transaction_saves_before_end_and_always_ends() {
+        let mut sent = Vec::new();
+        transaction(
+            &mut |p| {
+                sent.push(*p);
+                ack(p)
+            },
+            control_packet(0x13, 0, 1),
+            &mut std::iter::once([7; 64]),
+        )
+        .unwrap();
+        let ops: Vec<_> = sent.iter().map(|p| (p[0], p[1], p[8])).collect();
+        assert_eq!(
+            ops,
+            [
+                (4, START, 1),
+                (4, 0x13, 1),
+                (7, 7, 7),
+                (4, SAVE, 0),
+                (4, END, 1)
+            ]
+        );
+
+        // A refused preamble stops before data and SAVE but still ends.
+        let mut sent = Vec::new();
+        let result = transaction(
+            &mut |p| {
+                sent.push(*p);
+                let mut r = *p;
+                r[3] = if p[1] == 0x13 { 0xff } else { 1 };
+                Ok(r)
+            },
+            control_packet(0x13, 0, 1),
+            &mut std::iter::once([7; 64]),
+        );
+        assert!(result.is_err());
+        assert_eq!(sent.len(), 3);
+        assert_eq!(sent[2][1], END);
+    }
+
+    #[test]
+    fn busy_start_is_retried_then_accepted() {
+        let mut busy = 2;
+        let mut starts = 0;
+        transaction(
+            &mut |p| {
+                let mut r = *p;
+                r[3] = 1;
+                if p[1] == START {
+                    starts += 1;
+                    if busy > 0 {
+                        busy -= 1;
+                        return Ok(if busy == 0 {
+                            [0; 64]
+                        } else {
+                            {
+                                r[3] = 0xff;
+                                r
+                            }
+                        });
+                    }
+                }
+                Ok(r)
+            },
+            control_packet(0x13, 0, 1),
+            &mut std::iter::empty(),
+        )
+        .unwrap();
+        assert_eq!(starts, 3);
     }
 
     #[test]

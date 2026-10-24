@@ -18,9 +18,12 @@ This device instead has the older feature-report profile:
 The web-driver profile (FF68 control, FF67 TFT/4104) remains supported.
 Classification is shared with the UI. The bootloader PID 7140 is excluded
 from application enumeration. New PID 800A also requires an AK820 product
-name because Sonix IDs are reused by unrelated keyboards. macOS vendor
-handles use non-exclusive opens. Standard keyboard collections are not
-opened by descriptor diagnostics.
+name because Sonix IDs are reused by unrelated keyboards. This profile's
+vendor handles use non-exclusive opens (the TFT worker process opens the
+control endpoint the app already holds); web-profile boards keep hidapi's
+exclusive open. Standard keyboard collections of this profile are not
+opened by descriptor diagnostics. A device counts as this profile only if it
+exposes FF13 and no FF67.
 
 Web commands are never sent to the older profile. The capability report and UI
 route supported operations to their correct protocol. USB product release 0111
@@ -31,9 +34,10 @@ is not used to infer firmware 1.11 or to enable commands.
 | Feature | Legacy implementation | Verification |
 |---|---|---|
 | Static images / GIFs | Separate acknowledged 4096-byte transport | Full-screen quadrants and 8-frame GIF visually confirmed |
-| Lighting effects | Feature-report mode transaction; 20 standard modes, no Custom | Static cyan visually confirmed with GIF still running |
-| Clock sync | Local binary date/time, START/28/data/F0 | Completed feature handshakes; clock page not visually checked |
-| Sleep timer | Never / 1 / 5 / 30 minutes, START/17/data | Five-minute setting sent; idle timeout and persistence not observed |
+| Lighting effects | Feature-report mode transaction (START/13/data/SAVE/END); 20 standard modes | Static cyan visually confirmed with GIF still running |
+| Per-key RGB (custom) | Mode 80 session plus 576-byte bank session, ANSI slot table | WASD + E visually confirmed (vespovios); paint view by adamauthor |
+| Clock sync | Local binary date/time, START/28/data/SAVE/END | Completed feature handshakes; clock page not visually checked |
+| Sleep timer | Never / 1 / 5 / 30 minutes, START/17/data/SAVE/END | Five-minute setting sent; idle timeout and persistence not observed |
 | Battery | Query 20 01; FF preserved as wired/full sentinel | Actual FF reply; percentage/charging not invented |
 | Key remapping on Mac | Device-scoped hidutil, baseline backup, readback and undo | Temporary A→A and F24→F24 round trip restored initial mappings |
 | Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Six recorded key events survived app restart; manual playback typed фис under Russian input; owner confirmed the global shortcut; Stop cancelled before input |
@@ -51,14 +55,16 @@ preset that requires an unsupported onboard key table.
 Every feature buffer is report ID 0 followed by 64 payload bytes. Control
 payloads begin `04 command subcommand`, with a little-endian value at bytes
 8–9. Each send has a 50 ms delay and a feature response; control echoes must
-match. Lighting uses `18(value=1)`, `13(value=1)`, mode data, `F0(value=1)`.
-Mode data contains mode, RGB, rainbow boolean at 8, brightness/speed/direction
-at 9/10/11, and `55 AA` at 14–15. Static is Breath (7) at speed zero; Off is
-SingleOn (2) with brightness zero. Sleep uses `18`, `17(sub=1,value=1)`, then
-data with its step at 8 and `AA 55` at 62–63; no guessed commit is appended.
-Clock uses `18`, `28`, data `[00 01 5A yy month day hour minute second]`, 04 at
-10 and `AA 55` at 62–63, then `F0`. All whole feature transactions share a
-nonblocking process lock with the TFT worker to prevent interleaving.
+match. Every setting ends with `02(value=0)` (SAVE) and `F0(value=1)` (END);
+see [Feature transactions](#feature-transactions). Lighting uses
+`18(value=1)`, `13(value=1)`, mode data. Mode data contains mode, RGB,
+rainbow boolean at 8, brightness/speed/direction at 9/10/11, and `55 AA` at
+14–15. Static is Breath (7) at speed zero; Off is SingleOn (2) with
+brightness zero. Sleep uses `18`, `17(sub=1,value=1)`, then data with its
+step at 8 and `AA 55` at 62–63. Clock uses `18`, `28`, data
+`[00 01 5A yy month day hour minute second]`, 04 at 10 and `AA 55` at 62–63.
+All whole feature transactions share a process lock with the TFT worker to
+prevent interleaving.
 
 ### Mac keyboard controls
 
@@ -125,9 +131,45 @@ END (04 F0); then START, 04 23 flag 9, nine unframed 64-byte blocks of the
 two bytes), SAVE and END. Command replies must carry status 1 in byte 3;
 data replies echo colour bytes and are not checked. END is always sent, and
 a failed bank is never saved. The slot table is ANSI only and was verified
-there with WASD and E; ISO keys are not mapped. The CLI exposes it as
-`rgb fill` / `rgb rainbow` on this firmware. Each write commits, so it is
-not used for streaming effects.
+there with WASD and E; the ISO key left of Z (slot 98) has no LED index.
+
+`set_lighting(custom)` runs the first session only (mode 80 renders the
+stored bank) and `set_custom_led` the second, so the app's paint view and
+`ak820 rgb fill` / `rgb rainbow` use the same calls as on web firmware.
+The firmware has no bank read-back; the paint view starts black and Apply
+writes the whole map. Each write is saved, so audio-reactive streaming
+stays disabled.
+
+## Feature transactions
+
+Every setting (effect, sleep, clock, custom mode, colour bank) is one
+session: START (04 18), the command preamble, its data packets, SAVE
+(04 02, flag 0), END (04 F0). Command replies must echo `04 <command>`
+with status 1 in byte 3; data replies echo their bytes and are not checked.
+END is sent after a failure too.
+
+Measured on this keyboard: without SAVE, END answers FF and for about 2 s
+START, the preamble and any data are refused (status FF or an all-zero
+report). Earlier builds wrote effects that way, so quick successive
+changes could be dropped, and an image upload right after an effect lost
+its first block ("No acknowledgement for TFT chunk 1"). With SAVE,
+back-to-back writes all return 01 and take about 0.3 s. START still waits
+up to 3 s for a keyboard left busy by another program.
+
+Persistence, tested: static green with SAVE, then static red without SAVE
+(END answered FF), then a full power-off. The keyboard came back red, so a
+lighting write is stored even without SAVE; there is no RAM-only write.
+Host-driven lighting that changes often (notifications, per-app colours,
+audio-reactive streaming) therefore wears the flash, and so does every
+image upload, which rewrites the stored animation. The app only writes on
+an explicit user action: no auto-apply in the Lighting and paint views, no
+automatic TFT restore, no Now-Playing or audio-reactive streaming.
+
+The image upload checks every command status, waits for a busy START the
+same way, and sends END after a failed transfer. The cross-process
+transaction lock now waits up to 12 s (a 49-block upload takes about 8 s)
+instead of failing at once, so a lighting change during an upload is
+applied after it rather than dropped.
 
 ## Validation on the attached keyboard
 

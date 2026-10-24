@@ -177,23 +177,30 @@ pub fn worker_entry() {
         let _lock = crate::legacy::TransactionLock::acquire(target.pid)?;
         let chunks = payload.len() / CHUNK_BYTES;
         feature(&control, 0x18, 0, 0)?;
-        feature(&control, 0x72, IMAGE_SLOT, chunks as u16)?;
-        for (i, chunk) in payload.chunks_exact(CHUNK_BYTES).enumerate() {
-            let mut report = [0u8; CHUNK_BYTES + 1];
-            report[1..].copy_from_slice(chunk);
-            if data.write(&report)? != report.len() {
-                return Err(failure(format!("Short TFT write at chunk {}", i + 1)));
+        let transfer = (|| {
+            feature(&control, 0x72, IMAGE_SLOT, chunks as u16)?;
+            for (i, chunk) in payload.chunks_exact(CHUNK_BYTES).enumerate() {
+                let mut report = [0u8; CHUNK_BYTES + 1];
+                report[1..].copy_from_slice(chunk);
+                if data.write(&report)? != report.len() {
+                    return Err(failure(format!("Short TFT write at chunk {}", i + 1)));
+                }
+                let mut ack = [0u8; 64];
+                if data.read_timeout(&mut ack, 1000)? == 0 {
+                    return Err(failure(format!(
+                        "No acknowledgement for TFT chunk {}/{}; SAVE was not sent",
+                        i + 1,
+                        chunks
+                    )));
+                }
             }
-            let mut ack = [0u8; 64];
-            if data.read_timeout(&mut ack, 1000)? == 0 {
-                return Err(failure(format!(
-                    "No acknowledgement for TFT chunk {}/{}; SAVE was not sent",
-                    i + 1,
-                    chunks
-                )));
-            }
+            feature(&control, 0x02, 0, 0)
+        })();
+        if transfer.is_err() {
+            // Close the session so the keyboard accepts the next command.
+            let _ = feature(&control, 0xf0, 0, 1);
         }
-        feature(&control, 0x02, 0, 0)?;
+        transfer?;
         std::thread::sleep(Duration::from_millis(100));
         Ok(())
     })();
@@ -206,18 +213,17 @@ pub fn worker_entry() {
 
 fn feature(device: &HidDevice, command: u8, subcommand: u8, value: u16) -> Result<()> {
     // ID 0 is separate from the 04 first payload byte: 65 bytes to hidapi.
-    let mut report = [0u8; 65];
-    report[1..].copy_from_slice(&crate::legacy::control_packet(command, subcommand, value));
-    device.send_feature_report(&report)?;
-    std::thread::sleep(Duration::from_millis(50));
-    let mut response = [0u8; 65];
-    let n = device.get_feature_report(&mut response)?;
-    if n != 65 || response[1..3] != [0x04, command] {
-        return Err(failure(format!(
-            "Unexpected feature handshake for command 0x{command:02x}; transfer stopped"
-        )));
+    let mut send = |p: &[u8; 64]| crate::legacy::exchange(device, p);
+    if command == crate::legacy::START {
+        // Waits out a keyboard still busy after another app's write.
+        return crate::legacy::start_with_flag(&mut send, value);
     }
-    Ok(())
+    let reply = send(&crate::legacy::control_packet(command, subcommand, value))?;
+    crate::legacy::validate_ack(&reply, command).map_err(|_| {
+        failure(format!(
+            "Keyboard refused feature command 0x{command:02x}; transfer stopped"
+        ))
+    })
 }
 
 #[cfg(test)]

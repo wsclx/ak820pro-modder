@@ -228,6 +228,10 @@ async fn run_loop(
 /// buffer we stream below is actually rendered. We push a Custom-mode
 /// lighting config once; the firmware remembers it until we send another
 /// mode change.
+/// Family-B boards save every lighting write to flash.
+pub(crate) const STREAMING_UNAVAILABLE: &str =
+    "Audio-reactive lighting is unavailable on this keyboard: it saves every colour write to flash";
+
 async fn enable_custom_mode(conn: &crate::ConnState) -> Result<(), AppError> {
     // `LightingConfig` has no Default impl (mode/color/brightness are
     // mandatory), so spell out a minimal Custom-mode payload here.
@@ -245,6 +249,9 @@ async fn enable_custom_mode(conn: &crate::ConnState) -> Result<(), AppError> {
     };
     conn.with(|slot| {
         let c = crate::ensure_open(slot)?;
+        if c.info().protocol == ak820_protocol::device::DeviceProtocol::LegacyFeature {
+            return Err(AppError::Protocol(STREAMING_UNAVAILABLE.into()));
+        }
         c.set_lighting(&cfg)?;
         Ok(())
     })
@@ -254,6 +261,11 @@ async fn enable_custom_mode(conn: &crate::ConnState) -> Result<(), AppError> {
 async fn write_custom_led(conn: &crate::ConnState, map: CustomLedMap) -> Result<(), AppError> {
     conn.with(|slot| {
         let c = crate::ensure_open(slot)?;
+        // Re-checked per frame: a reconnect may land on a family-B board,
+        // where every bank write is a flash write.
+        if c.info().protocol == ak820_protocol::device::DeviceProtocol::LegacyFeature {
+            return Err(AppError::Protocol(STREAMING_UNAVAILABLE.into()));
+        }
         c.set_custom_led(&map)?;
         Ok(())
     })
