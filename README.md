@@ -49,12 +49,18 @@ The official Epomaker / Ajazz driver is Windows-only and limited. macOS users ge
 
 ### USB 0C45:800A / FF13 keyboards
 
-This firmware revision now connects on macOS and has a separate, hardware-tested
-image/GIF upload path. Lighting, local clock sync, sleep settings and battery
-status use feature reports. Key remapping and keyboard macros have explicit
-Mac-only fallbacks with readback/undo and app-local recording. Onboard key/Fn
-maps, onboard macros, per-key RGB and live TFT streams remain unavailable on
-this revision. See the [feature matrix and USB verification](docs/MACOS-800A.md).
+This firmware revision ("family B": an `0xFF13` feature-report interface and
+no `0xFF67`) connects on macOS. Lighting effects, per-key RGB (ANSI layout),
+local clock sync, sleep settings and battery status use feature reports;
+image/GIF upload has a separate path that asks for confirmation first,
+because it replaces the animation stored on the keyboard. The keyboard saves
+every write to flash, so the app writes only when you press Apply. Key
+remapping and keyboard macros have explicit Mac-only fallbacks with
+readback/undo and app-local recording. Onboard key/Fn maps, onboard macros,
+built-in TFT animations and live TFT or audio-reactive streams remain
+unavailable on this revision. Ported from adamauthor's and vespovios'
+forks and tested there, not on this repository's build; see the
+[feature matrix and USB verification](docs/MACOS-800A.md).
 The web-output firmware features described elsewhere keep their existing path.
 
 ## Quick start

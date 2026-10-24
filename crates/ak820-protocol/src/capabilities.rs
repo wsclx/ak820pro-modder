@@ -27,7 +27,8 @@ impl DeviceCapabilities {
             protocol,
             host_keyboard: !web && cfg!(target_os = "macos"),
             lighting: true,
-            clock_sync: !web,
+            // Family A via cmd 52, family B via the 04 28 transaction.
+            clock_sync: true,
             sleep_timer: true,
             device_info: web,
             game_mode: web,
@@ -50,6 +51,7 @@ mod tests {
         let web = DeviceCapabilities::for_protocol(DeviceProtocol::WebOutput);
         assert!(
             web.lighting
+                && web.clock_sync
                 && web.device_info
                 && web.game_mode
                 && web.keymap

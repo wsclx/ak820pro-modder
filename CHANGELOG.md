@@ -4,30 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it leaves beta.
 
-## [Unreleased] — FF13 / USB 800A support
-
-- TFT uploads on FF13 firmware target custom slot 1 (`04 72 01`) instead of
-  slot 3, after vespovios/ak820pro-modder@3264608: on another ANSI 800A,
-  slot 3 showed a static image only briefly among other animation.
-- Per-key RGB on FF13 firmware (ANSI layout): `ak820 rgb fill` and
-  `ak820 rgb rainbow` write the 576-byte colour bank in two acknowledged
-  sessions. Protocol and slot table ported from vespovios/ak820pro-modder.
-
-- Detect SONiX AK820 USB 0C45:800A and separate its FF13 feature control / FF68
-  4096-byte TFT profile from web-output firmware. Open macOS HID non-exclusively.
-- Add opt-in legacy image/GIF uploads with exact descriptor guards, per-chunk
-  acknowledgements, shared transaction lock and a supervised writer process.
-- Add legacy lighting, local clock sync, four sleep settings and honest battery
-  status. Keep unknown onboard commands disabled and hide incompatible controls.
-- Add device-scoped Mac key remapping with backup/readback/undo and Mac keyboard
-  macros with focused recording, shortcuts, cancellation and Accessibility checks.
-- Prevent unsupported preset key-table writes before applying any preset settings;
-  avoid side-effect GIF rewrites on the verified legacy lighting path.
-- Document hardware evidence and remaining limitations in docs/MACOS-800A.md.
-
 ## [Unreleased]
 
 ### Added
+- **Family-B boards (`0xFF13` feature reports, e.g. ANSI `0C45:800A`).** A device that exposes `0xFF13` and no `0xFF67` is classified as family B; `open_control` routes it to the feature-report transport instead of refusing it, and family-A boards keep their protocol and endpoint selection. Supported there: the 20 lighting effects, per-key RGB (ANSI slot table), clock sync, sleep timer (0/1/5/30 min), battery read, and image/GIF upload to custom slot 1 after an explicit confirmation. Every setting is one transaction START → preamble → data → SAVE (`04 02`) → END (`04 F0`); END is sent after failures too, a busy START is retried for up to 3 s. Onboard keymap, macros, device info, game mode, built-in TFT animations, Now-Playing and audio-reactive streaming give a clear error on family B; on macOS the app offers host-side key remapping and macros instead. Because family B stores every lighting and TFT write in flash, the Lighting and paint views write only on Apply there and the TFT is never re-uploaded automatically. From [adamauthor PR #12](https://github.com/wsclx/ak820pro-modder/pull/12) and adamauthor/ak820pro-modder `main`; TFT slot fix, per-key RGB protocol and `docs/COMPATIBILITY.md` / `docs/PER-KEY-RGB.md` from vespovios/ak820pro-modder. Details and hardware evidence: [docs/MACOS-800A.md](docs/MACOS-800A.md). [#8](https://github.com/wsclx/ak820pro-modder/issues/8)
+- CLI: `ak820 capabilities`, `ak820 clock [--dry-run]`, `ak820 sleep <0|1|5|30> [--dry-run]`, `ak820 tft upload <file> [--fit] [--allow-legacy] [--dry-run]`.
 - **Now-Playing on TFT (Phase 5e part 1).** New host-side polling task in `src-tauri/src/now_playing_tft.rs` reads the current Music.app / Spotify track every 2 s, rasterises title (2 lines, FONT_8X13_BOLD) + artist (FONT_6X10) + album (FONT_5X8, dim) + source footer (FONT_5X8) onto a 128 × 128 RGB565 frame, and uploads via the existing chunked `upload_tft_animation` path. `embedded-graphics 0.8` provides MonoFonts and the `DrawTarget` trait; `src-tauri/src/tft_text.rs` implements a tiny `Framebuffer128` that writes RGB565-LE directly so we don't double-allocate. Word-boundary line-wrap for titles longer than 16 chars; ellipsis-truncation for over-long lines on every row. Cross-platform — non-macOS `now_playing::fetch` returns None and the panel reads `Nothing playing` indefinitely. New Tauri commands `now_playing_tft_start` / `_stop` / `_status` and a toggle in the TFT view. On start, `TftMemory.forget()` runs so side-effecting commands don't restore a stale preset on top of the live readout. [#6](https://github.com/wsclx/ak820pro-modder/issues/6)
 - **TFT clock sync.** `Connection::set_tft_datetime` sends the web driver's `setTftDateTime` payload (`[5A 01 5A YY MM DD hh mm ss weekday]` via `SET_TEMPORARY_COMMAND_DATA`, cmd 52) so the stock clock page shows the right time. New `TftDateTime` in `commands/clock.rs` (previously an empty stub), `ak820 tft sync-time`, Tauri command `tft_sync_clock`, and a "Clock & display page" card in the TFT view that also explains the **Fn + Delete** page toggle. Not yet hardware-verified on firmware 1.07.
 - **TFT upload reports.** Every upload returns `TftUploadReport` (chunks, acknowledged, pace, duration); the TFT view and the CLI show it, so a hardware test tells directly which flow-control path ran.
@@ -37,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 - **Control-endpoint selection honours the usage-page priority list.** `open_control` used to take the *first enumerated* interface whose usage page appeared anywhere in `[0xFF68, 0xFF80, 0xFF60, 0xFF00, 0xFF01, 0xFF1B]`, so the result depended on the order macOS reports interfaces in. It now walks the list in priority order via the new `select_control()`, which `probe_device` shares, so "connected" always refers to the interface the next command opens. The last-resort fallback `CONTROL_INTERFACE` was `3` (the TFT collection, which drops control frames) and is now `2`. [#8](https://github.com/wsclx/ak820pro-modder/issues/8)
-- **Actionable timeout errors.** "timeout waiting for cmd 0x10" now names the interface, usage page and USB release (firmware) of the endpoint, and flags boards that expose the `0xFF13` feature-report interface without the `0xFF67` TFT collection: newer revisions (e.g. ANSI on firmware 1.14) that speak a protocol this app doesn't support yet. On such boards `open_control` now refuses up front with `Error::UnsupportedRevision` instead of writing `0xAA` frames to their `0xFF68` interface, which carries 4096-byte TFT data there; `AK820_IFACE` / `AK820_USAGE_PAGE` still force an endpoint for experiments. [#8](https://github.com/wsclx/ak820pro-modder/issues/8)
+- **Actionable timeout errors.** "timeout waiting for cmd 0x10" now names the interface, usage page and USB release (firmware) of the endpoint. `AK820_IFACE` / `AK820_USAGE_PAGE` can no longer pick a family-B `0xFF68` interface, which carries 4096-byte TFT data there. [#8](https://github.com/wsclx/ak820pro-modder/issues/8)
 - Two Keymap error banners (`Couldn't read factory defaults`, `Couldn't bind automation`) still rendered `[object Object]`; both go through `formatError` now.
 - `cargo fmt --check` was failing on `main` (unformatted TFT commands in `src-tauri/src/lib.rs`).
 - **TFT uploads are flow-controlled.** Chunks used to go out back-to-back without reading the firmware's cmd-65 ack, the prime suspect for the horizontal noise lines in [#2](https://github.com/wsclx/ak820pro-modder/issues/2). The first chunk now probes for the ack (1 s); if acks arrive, every chunk waits for its ack, otherwise (or after one missing ack) the rest are paced at `AK820_TFT_PACE_MS` (default 10 ms) while still listening for late acks. Read errors never fail an upload.
@@ -48,7 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 - **iCloud sync merges per automation instead of replacing the whole file.** Two Macs editing different automations used to lose one side's changes silently (last-write-wins on `automations.json` by mtime). `icloud_sync.rs` now runs a three-way merge by `id` against a per-Mac base (`icloud-sync-base.json`, the `updated_at` values seen at the last sync). Deletions leave a tombstone in `automations-tombstones.json`, locally and in iCloud, so an old copy on another Mac can't bring the entry back; tombstones expire after 180 days. An automation changed on both sides (or edited on one, deleted on the other) becomes a conflict listed in System → iCloud Sync with "Keep this Mac's" / "Use iCloud's"; nothing is overwritten until then. The iCloud `automations.json` stays a plain array, so a Mac still on an older version keeps working and can't destroy data: entries it drops come back, its stale re-adds lose against the tombstones, only its own deletions don't propagate. Every file a sync overwrites keeps its previous content as `*.json.bak`. `icloud_sync_push` and `_pull` now run the same merge and return a `SyncReport`; `_pull` takes an optional `resolve`. The SyncCard's Push/Pull buttons became one "Sync now". The Automations view now applies each change to the on-disk list, so a save never records entries merged in from iCloud as deleted. [#4](https://github.com/wsclx/ak820pro-modder/issues/4)
 - `DeviceInfo` carries `release_number` (USB `bcdDevice`, e.g. `0x0107` = firmware 1.07); `ak820 list` prints it.
-- Recognise the alternate wired PID `0x800A` (listed as "AK820" in the AJAZZ device config and used by several community tools).
+- Recognise the alternate wired PID `0x800A` (listed as "AK820" in the AJAZZ device config and used by several community tools), only with the USB product name "AK820" because Sonix reuses IDs.
+- The ISP/bootloader PID `0x7140` is no longer in `PRODUCT_IDS`, so no connection path sends control frames to a board in ISP mode.
 - **CI**: `macos-14` is retired on 2026-11-02, Node 20 is gone from the runners, pnpm 9 is EOL. Moved to `macos-15`, `actions/checkout@v7`, `actions/setup-node@v7` (Node 22), `actions/upload-artifact@v7`, `pnpm/action-setup@v6`; the pnpm version (10.28.0) now comes from `packageManager` in `package.json`.
 
 ### Performance
