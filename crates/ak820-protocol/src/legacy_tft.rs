@@ -1,7 +1,7 @@
 //! TFT transport for the FF13/FF68 feature-report firmware.
 //!
 //! This is deliberately separate from the AA/55 web-driver protocol. The
-//! 04 72 03 image command replaces the stored animation before transfer, so
+//! 04 72 01 image command replaces the stored animation before transfer, so
 //! callers must explicitly opt in. No bootloader or firmware commands exist
 //! here. See docs/MACOS-800A.md for sources and hardware verification status.
 
@@ -17,6 +17,11 @@ use std::time::{Duration, Instant};
 const WORKER_ARG: &str = "--ak820-legacy-tft-worker";
 const CHUNK_BYTES: usize = 4096;
 const MAX_LEGACY_FRAMES: usize = 30;
+/// IMAGE_CFG byte 2 is the one-based destination slot (vendor ANSI driver
+/// 1.0.0.5: LCDViewList::GetCurSel()+1, layout gif_count=1). Slot 3 was
+/// acknowledged on an ANSI 800A but showed the image only briefly among
+/// other animation content; slot 1 kept it. From vespovios/ak820pro-modder@3264608.
+const IMAGE_SLOT: u8 = 1;
 
 #[derive(Serialize, Deserialize)]
 struct Upload {
@@ -172,7 +177,7 @@ pub fn worker_entry() {
         let _lock = crate::legacy::TransactionLock::acquire(target.pid)?;
         let chunks = payload.len() / CHUNK_BYTES;
         feature(&control, 0x18, 0, 0)?;
-        feature(&control, 0x72, 3, chunks as u16)?;
+        feature(&control, 0x72, IMAGE_SLOT, chunks as u16)?;
         for (i, chunk) in payload.chunks_exact(CHUNK_BYTES).enumerate() {
             let mut report = [0u8; CHUNK_BYTES + 1];
             report[1..].copy_from_slice(chunk);
@@ -202,10 +207,7 @@ pub fn worker_entry() {
 fn feature(device: &HidDevice, command: u8, subcommand: u8, value: u16) -> Result<()> {
     // ID 0 is separate from the 04 first payload byte: 65 bytes to hidapi.
     let mut report = [0u8; 65];
-    report[1] = 0x04;
-    report[2] = command;
-    report[3] = subcommand;
-    report[9..11].copy_from_slice(&value.to_le_bytes());
+    report[1..].copy_from_slice(&crate::legacy::control_packet(command, subcommand, value));
     device.send_feature_report(&report)?;
     std::thread::sleep(Duration::from_millis(50));
     let mut response = [0u8; 65];
@@ -245,6 +247,19 @@ mod tests {
             .iter()
             .all(|&b| b == 0x34));
         assert!(data[256 + 2 * FRAME_BYTES..].iter().all(|&b| b == 0xff));
+    }
+
+    #[test]
+    fn image_config_targets_the_first_custom_slot_with_the_block_count() {
+        for total in [9u16, 17, 257] {
+            let mut expected = [0; 64];
+            expected[..3].copy_from_slice(&[4, 0x72, 1]);
+            expected[8..10].copy_from_slice(&total.to_le_bytes());
+            assert_eq!(
+                crate::legacy::control_packet(0x72, IMAGE_SLOT, total),
+                expected
+            );
+        }
     }
 
     #[test]
