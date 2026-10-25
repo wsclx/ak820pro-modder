@@ -243,8 +243,9 @@ fn host_macros_save(app: AppHandle, config: host_keyboard::Config) -> Result<(),
     Ok(())
 }
 #[tauri::command]
-async fn host_remaps_get() -> Result<Vec<host_keyboard::Remap>, String> {
-    tokio::task::spawn_blocking(host_keyboard::get_remaps)
+async fn host_remaps_get(app: AppHandle) -> Result<Vec<host_keyboard::Remap>, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || host_keyboard::get_remaps(&dir))
         .await
         .map_err(|e| e.to_string())?
 }

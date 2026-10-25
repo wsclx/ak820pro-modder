@@ -9,7 +9,7 @@ use std::{
 static RUNNING: AtomicBool = AtomicBool::new(false);
 static CANCEL: AtomicBool = AtomicBool::new(false);
 const PAGE: u64 = 7 << 32;
-static REMAP_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+mod remapping;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Remap {
@@ -33,7 +33,7 @@ pub struct HostMacro {
 pub struct Config {
     pub macros: Vec<HostMacro>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 struct NativeMapping {
     #[serde(
         rename = "HIDKeyboardModifierMappingSrc",
@@ -55,11 +55,6 @@ fn mapping_number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u64, D::Erro
         serde_json::Value::String(s) => s.parse().map_err(serde::de::Error::custom),
         _ => Err(serde::de::Error::custom("invalid mapping number")),
     }
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct RemapBackup {
-    baseline: Vec<NativeMapping>,
-    applied: Vec<NativeMapping>,
 }
 #[derive(Serialize)]
 pub struct Status {
@@ -154,99 +149,14 @@ fn validate_steps(steps: &[Step]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn get_remaps() -> Result<Vec<Remap>, String> {
-    native::read_map()?
-        .into_iter()
-        .map(|m| {
-            if m.source >> 32 != 7 || m.destination >> 32 != 7 {
-                return Err(
-                    "Existing mappings use a different usage page; leave them unchanged".into(),
-                );
-            }
-            Ok(Remap {
-                source: (m.source & 0xffff) as u16,
-                destination: (m.destination & 0xffff) as u16,
-            })
-        })
-        .collect()
+pub fn get_remaps(dir: &Path) -> Result<Vec<Remap>, String> {
+    remapping::get(dir)
 }
 pub fn saved_remaps(dir: &Path) -> Result<Vec<Remap>, String> {
-    let bytes =
-        std::fs::read(dir.join("host-remap-backup.json")).map_err(|_| "No saved Mac mappings")?;
-    let backup: RemapBackup = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    Ok(backup
-        .applied
-        .into_iter()
-        .map(|m| Remap {
-            source: (m.source & 0xffff) as u16,
-            destination: (m.destination & 0xffff) as u16,
-        })
-        .collect())
+    remapping::saved(dir)
 }
 pub fn apply_remaps(dir: &Path, remaps: Vec<Remap>, restore: bool) -> Result<Vec<Remap>, String> {
-    let _lock = REMAP_LOCK
-        .lock()
-        .map_err(|_| "Mac mapping lock unavailable")?;
-    let mut sources = BTreeSet::new();
-    if remaps.len() > 128
-        || remaps.iter().any(|r| {
-            !(4..=231).contains(&r.source)
-                || !(4..=231).contains(&r.destination)
-                || !sources.insert(r.source)
-        })
-    {
-        return Err("Use unique keyboard usages from 4 to 231".into());
-    }
-    let current = native::read_map()?;
-    let path = dir.join("host-remap-backup.json");
-    let old: Option<RemapBackup> = if path.exists() {
-        Some(
-            serde_json::from_slice(&std::fs::read(&path).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?,
-        )
-    } else {
-        None
-    };
-    if let Some(old) = &old {
-        // Empty is also allowed after a device re-plug (macOS loses hidutil mappings).
-        if current != old.applied && !current.is_empty() {
-            return Err("Mappings were changed by another app. Leave them unchanged and review the conflict first".into());
-        }
-    }
-    if restore {
-        let old = old.ok_or("No mappings applied by this app to undo")?;
-        native::write_map(&old.baseline)?;
-        std::fs::remove_file(path).map_err(|e| e.to_string())?;
-    } else {
-        let applied = remaps
-            .iter()
-            .map(|r| NativeMapping {
-                source: PAGE | u64::from(r.source),
-                destination: PAGE | u64::from(r.destination),
-            })
-            .collect();
-        let backup = RemapBackup {
-            baseline: old
-                .as_ref()
-                .map(|b| b.baseline.clone())
-                .unwrap_or_else(|| current.clone()),
-            applied,
-        };
-        // Save the undo record BEFORE touching macOS.
-        write_json(dir, "host-remap-backup.json", &backup)?;
-        if let Err(error) = native::write_map(&backup.applied) {
-            // A denied/no-op write must not leave a misleading ownership record.
-            if native::read_map().ok().as_ref() == Some(&current) {
-                if let Some(old) = old {
-                    let _ = write_json(dir, "host-remap-backup.json", &old);
-                } else {
-                    let _ = std::fs::remove_file(path);
-                }
-            }
-            return Err(error);
-        }
-    }
-    get_remaps()
+    remapping::apply(dir, remaps, restore)
 }
 
 pub fn play(m: HostMacro, countdown: bool) -> Result<(), String> {
@@ -416,14 +326,7 @@ fn virtual_key(code: &str) -> Option<u16> {
 
 #[cfg(target_os = "macos")]
 mod native {
-    use super::NativeMapping;
-    use std::{
-        ffi::c_void,
-        io::Write,
-        process::{Command, Stdio},
-    };
-    const MATCH: &str =
-        r#"{"VendorID":3141,"ProductID":32778,"PrimaryUsagePage":1,"PrimaryUsage":6}"#;
+    use std::ffi::c_void;
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn AXIsProcessTrusted() -> bool;
@@ -452,82 +355,14 @@ mod native {
         }
         Ok(())
     }
-    pub fn read_map() -> Result<Vec<NativeMapping>, String> {
-        let out = Command::new("/usr/bin/hidutil")
-            .args(["property", "--matching", MATCH, "--get", "UserKeyMapping"])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err(String::from_utf8_lossy(&out.stderr).into());
-        }
-        parse_map(&String::from_utf8_lossy(&out.stdout))
-    }
-    pub(super) fn parse_map(output: &str) -> Result<Vec<NativeMapping>, String> {
-        let mut lines = output
-            .lines()
-            .filter(|line| line.contains("UserKeyMapping"));
-        let first = lines
-            .next()
-            .ok_or("AJAZZ USB keyboard not found. Connect it by USB first")?;
-        if lines.next().is_some() {
-            return Err("Multiple matching keyboard services; refusing an ambiguous remap".into());
-        }
-        let start = output.find(first).ok_or("Missing keyboard property")?
-            + first.find("UserKeyMapping").ok_or("Missing property")?
-            + "UserKeyMapping".len();
-        let value = output[start..].trim();
-        if value == "(null)" {
-            return Ok(Vec::new());
-        }
-        let mut child = Command::new("/usr/bin/plutil")
-            .args(["-convert", "json", "-o", "-", "-"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        child
-            .stdin
-            .take()
-            .ok_or("Missing plist input")?
-            .write_all(value.as_bytes())
-            .map_err(|e| e.to_string())?;
-        let out = child.wait_with_output().map_err(|e| e.to_string())?;
-        if !out.status.success() {
-            return Err("Could not safely read existing macOS mappings; no changes made".into());
-        }
-        serde_json::from_slice(&out.stdout).map_err(|e| format!("Invalid macOS mapping: {e}"))
-    }
-    pub fn write_map(map: &[NativeMapping]) -> Result<(), String> {
-        let json = serde_json::json!({"UserKeyMapping":map}).to_string();
-        let out = Command::new("/usr/bin/hidutil")
-            .args(["property", "--matching", MATCH, "--set", &json])
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !out.status.success() || read_map()? != map {
-            return Err(format!(
-                "macOS did not apply the mapping: {} {}",
-                String::from_utf8_lossy(&out.stdout),
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        }
-        Ok(())
-    }
 }
 #[cfg(not(target_os = "macos"))]
 mod native {
-    use super::NativeMapping;
     pub fn trusted() -> bool {
         false
     }
     pub fn post(_: u16, _: bool, _: u64) -> Result<(), String> {
         Err("Mac macros require macOS".into())
-    }
-    pub fn read_map() -> Result<Vec<NativeMapping>, String> {
-        Err("Mac remapping requires macOS".into())
-    }
-    pub fn write_map(_: &[NativeMapping]) -> Result<(), String> {
-        Err("Mac remapping requires macOS".into())
     }
 }
 
@@ -540,30 +375,6 @@ mod tests {
             down,
             delay_ms: 10,
         }
-    }
-    #[cfg(target_os = "macos")]
-    #[test]
-    #[ignore = "requires connected USB AK820 Pro; temporary A and F24 identity mappings, then restores baseline"]
-    fn usb_remap_round_trip_and_undo() {
-        let dir =
-            std::env::temp_dir().join(format!("ak820-host-remap-test-{}", std::process::id()));
-        let before = get_remaps().unwrap();
-        let mut remaps = before.clone();
-        for source in [4, 115] {
-            if !remaps.iter().any(|r| r.source == source) {
-                remaps.push(Remap {
-                    source,
-                    destination: source,
-                });
-            }
-        }
-        let applied = apply_remaps(&dir, remaps.clone(), false);
-        if applied.is_ok() {
-            let restored = apply_remaps(&dir, vec![], true).unwrap();
-            assert_eq!(restored, before);
-        }
-        let _ = std::fs::remove_dir_all(dir);
-        assert_eq!(applied.unwrap(), remaps);
     }
     #[test]
     fn macro_validation_rejects_stuck_keys_unknown_keys_and_long_runs() {
@@ -606,24 +417,5 @@ mod tests {
             (1 << 20) | (1 << 17)
         );
         assert_eq!(flags(&BTreeSet::new()), 0);
-    }
-    #[cfg(target_os = "macos")]
-    #[test]
-    fn parses_hidutil_without_accepting_multiple_services() {
-        assert!(
-            native::parse_map("RegistryID Key Value\n123 UserKeyMapping (null)\n")
-                .unwrap()
-                .is_empty()
-        );
-        let map = native::parse_map("RegistryID Key Value\n123 UserKeyMapping (\n{ HIDKeyboardModifierMappingDst = 30064771077; HIDKeyboardModifierMappingSrc = 30064771076; }\n)\n").unwrap();
-        assert_eq!(
-            map[0],
-            NativeMapping {
-                source: PAGE | 4,
-                destination: PAGE | 5
-            }
-        );
-        assert!(native::parse_map("123 UserKeyMapping (null)\n456 UserKeyMapping (null)").is_err());
-        assert!(native::parse_map("RegistryID Key Value\n").is_err());
     }
 }

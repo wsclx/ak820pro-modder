@@ -39,7 +39,7 @@ is not used to infer firmware 1.11 or to enable commands.
 | Clock sync | Local binary date/time, START/28/data/SAVE/END | Completed feature handshakes; clock page not visually checked |
 | Sleep timer | Never / 1 / 5 / 30 minutes, START/17/data/SAVE/END | Five-minute setting sent; idle timeout and persistence not observed |
 | Battery | Query 20 01; FF preserved as wired/full sentinel | Actual FF reply; percentage/charging not invented |
-| Key remapping on Mac | Device-scoped hidutil, baseline backup, readback and undo | Temporary A→A and F24→F24 round trip restored initial mappings |
+| Key remapping on Mac | Native per-service mappings, physical USB grouping, baseline backup, readback and undo | F24→F24 read back on both keyboard services, then both baselines restored (2026-10-25) |
 | Keyboard macros on Mac | App-local recorder, global shortcuts, native event playback | Six recorded key events survived app restart; manual playback typed фис under Russian input; owner confirmed the global shortcut; Stop cancelled before input |
 | Host automations / profile sync | Existing host paths | Original behavior retained |
 
@@ -70,14 +70,16 @@ prevent interleaving.
 
 ### Mac keyboard controls
 
-Remapping matches only VID 0C45, PID 800A, primary usage page 1 / usage 6.
-It never changes the MacBook keyboard. The app reads existing mappings,
-records a baseline before the first write, verifies the result and offers
-undo. It refuses an ambiguous device match or a conflicting external change.
+Remapping matches wired AK820 services with VID 0C45, PID 800A that conform
+to keyboard page 1 / usage 6, including secondary keyboard collections.
+Services must share one physical USB ancestor. The app reads each service's
+existing mappings, saves separate baselines before writing and verifies every
+update. It refuses multiple physical keyboards and conflicting external changes.
 No root helper, launch agent, automatic startup remap, or firmware write is
-installed. macOS drops mappings after unplug/reboot; Load saved draft and
-Apply restore them. Some macOS security policies may deny mappings; failures
-are surfaced after readback rather than reported as success.
+installed. macOS drops mappings after unplug/reboot; old baselines cannot be
+assigned to a new attachment. See [backup migration and recovery](MACOS-HOST-REMAPPING.md)
+before reapplying a saved draft. Some macOS security policies may deny mappings;
+failures are surfaced after readback rather than reported as success.
 
 Mac macros store physical key-down/up events and delays in app data. Recording
 is confined to the focused recorder, without a global key logger. Playback

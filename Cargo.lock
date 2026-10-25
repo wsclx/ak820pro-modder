@@ -62,6 +62,7 @@ dependencies = [
  "ak820-audio-reactive",
  "ak820-protocol",
  "anyhow",
+ "core-foundation",
  "embedded-graphics",
  "serde",
  "serde_json",

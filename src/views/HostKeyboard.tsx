@@ -28,25 +28,31 @@ export function HostKeymap() {
   async function apply(restore: boolean) {
     setBusy(true); setError(null); setNotice("");
     try {
-      setRemaps(await invoke<Remap[]>("host_remaps_apply", { remaps, restore }));
-      setNotice(restore ? "Previous Mac mappings restored." : "Mappings applied and read back from macOS.");
+      const applied = await invoke<Remap[]>("host_remaps_apply", { remaps, restore });
+      setRemaps(applied);
+      setNotice(restore
+        ? applied.length
+          ? "Interrupted change reversed. Earlier app mappings are still active; use Undo again to remove them."
+          : "App changes undone. Other mappings were preserved."
+        : "Mappings applied and read back from each keyboard service.");
     } catch (e) { setError(formatError(e)); }
     finally { setBusy(false); }
   }
   return <div className="space-y-5">
     <PageHeader title="Key remapping on this Mac" description="For the USB AK820 Pro (0C45:800A). Changes affect this keyboard on this Mac." />
-    <p className="text-sm text-fg-2">macOS forgets these mappings after unplugging or restarting. Reapply here when needed. Fn combinations and the knob are handled inside the keyboard and cannot be remapped through this Mac fallback. Key names are physical HID positions; typed characters follow your Mac input language.</p>
+    <p className="text-sm text-fg-2">macOS forgets these mappings after unplugging or restarting. Reapplying on a new connection requires reviewing the previous backup. Fn combinations and the knob are handled inside the keyboard and cannot be remapped through this Mac fallback. Key names are physical HID positions; typed characters follow your Mac input language.</p>
     {error && <ErrorBanner>{error}</ErrorBanner>}
     {notice && <p role="status" className="text-sm text-good">{notice}</p>}
-    <Card title="USB key mappings">
+    <Card title="App remapping draft">
       <div className="space-y-3">
+        <p className="text-sm text-fg-2">Apply preserves mappings made by other tools and reports conflicting keys. Undo removes only this app’s changes.</p>
         {remaps.map((r, i) => <div key={i} className="flex flex-wrap items-center gap-3">
           {(["source", "destination"] as const).map((field, j) => <label key={field} className="text-sm">{j === 0 ? "From " : "To "}<select aria-label={`${field} ${i + 1}`} className={INPUT} value={r[field]} disabled={busy} onChange={e => setRemaps(remaps.map((v, n) => n === i ? { ...v, [field]: Number(e.target.value) } : v))}>
             {USAGES.map(hid => <option key={hid} value={hid}>{hidName(hid)} ({hid})</option>)}
           </select></label>)}
           <Button disabled={busy} onClick={() => setRemaps(remaps.filter((_, n) => n !== i))}>Remove</Button>
         </div>)}
-        {!remaps.length && <p className="text-sm text-fg-2">No Mac remapping for this keyboard.</p>}
+        {!remaps.length && <p className="text-sm text-fg-2">No mappings in this draft.</p>}
         <div className="flex flex-wrap gap-2">
           <Button disabled={busy || remaps.length >= 128} onClick={() => setRemaps([...remaps, { source: USAGES.find(u => !remaps.some(r => r.source === u)) ?? 4, destination: 41 }])}>Add mapping</Button>
           <Button variant="primary" disabled={busy} onClick={() => void apply(false)}>Apply on this Mac</Button>
