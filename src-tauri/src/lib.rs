@@ -17,6 +17,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
+mod app_lifecycle;
 #[cfg(target_os = "macos")]
 mod audio_reactive;
 mod automations;
@@ -1337,7 +1338,27 @@ pub fn run() {
         .with_target(false)
         .init();
 
+    let context = tauri::generate_context!();
+    let app_name = context
+        .config()
+        .product_name
+        .clone()
+        .unwrap_or_else(|| "AK820 Pro Modder".into());
     let builder = tauri::Builder::default()
+        // Register first so a second launch exits before shortcuts/HID state start.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _| {
+            if !app_lifecycle::is_background_launch(args) {
+                let handle = app.clone();
+                let _ = app.run_on_main_thread(move || app_lifecycle::show(&handle));
+            }
+        }))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .args(["--background"])
+                .app_name(app_name)
+                .build(),
+        )
+        .manage(Arc::new(app_lifecycle::Runtime::default()))
         .manage(Arc::new(ConnState::default()))
         .manage(Arc::new(TftMemory::default()))
         .manage(Arc::new(NowPlayingTftState::default()))
@@ -1354,6 +1375,12 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            app_lifecycle::app_lifecycle_status,
+            app_lifecycle::set_start_at_login,
+            app_lifecycle::set_keep_running_on_close,
+            app_lifecycle::hide_to_menu_bar,
+            app_lifecycle::quit_keyboard_app,
+            app_lifecycle::take_app_settings_request,
             host_keyboard_status,
             host_macro_stop,
             host_macro_run,
@@ -1435,6 +1462,8 @@ pub fn run() {
             let app_menu = SubmenuBuilder::new(app, "AK820 Pro Modder")
                 .item(&PredefinedMenuItem::about(app, Some("About AK820 Pro Modder"), Some(about_meta))?)
                 .separator()
+                .item(&MenuItem::with_id(app, "app_settings", "App settings…", true, Some("CmdOrCtrl+,"))?)
+                .separator()
                 .item(&PredefinedMenuItem::hide(app, None)?)
                 .item(&PredefinedMenuItem::hide_others(app, None)?)
                 .item(&PredefinedMenuItem::show_all(app, None)?)
@@ -1475,6 +1504,7 @@ pub fn run() {
             app.set_menu(menu)?;
 
             app.on_menu_event(|app, event| match event.id().as_ref() {
+                "app_settings" => app_lifecycle::request_settings(app),
                 "reload" => {
                     if let Some(win) = app.get_webview_window("main") {
                         let _ = win.eval("location.reload()");
@@ -1509,8 +1539,19 @@ pub fn run() {
             if let Err(e) = refresh_automation_shortcuts(app.handle()) {
                 tracing::warn!("initial automation shortcut registration failed: {e}");
             }
+            if let Err(e) = app_lifecycle::init(app.handle()) {
+                tracing::warn!("Menu bar initialization failed: {e}");
+            }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running AK820 Pro app");
+        .build(context)
+        .expect("error while building AK820 Pro app")
+        .run(|app, event| match event {
+            tauri::RunEvent::Ready => app_lifecycle::startup(app),
+            tauri::RunEvent::WindowEvent { label, event: tauri::WindowEvent::CloseRequested { api, .. }, .. }
+                if label == "main" => app_lifecycle::handle_close(app, &api),
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => app_lifecycle::show(app),
+            _ => {}
+        });
 }

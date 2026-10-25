@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { AppSettings } from "./views/AppSettings";
 import { Automations } from "./views/Automations";
 import { Connect } from "./views/Connect";
 import { Keymap } from "./views/Keymap";
@@ -26,6 +28,7 @@ import {
 } from "./components/Layout";
 
 type Tab =
+  | "app-settings"
   | "connect"
   | "lighting"
   | "system"
@@ -46,6 +49,7 @@ const NAV: NavItem<Tab>[] = [
   { id: "automations", label: "Automations", icon: <Automation {...ICON_PROPS} /> },
   { id: "presets", label: "Presets", icon: <Preset {...ICON_PROPS} /> },
   { id: "tft", label: "TFT Display", icon: <Screen {...ICON_PROPS} /> },
+  { id: "app-settings", label: "App settings", icon: <Settings {...ICON_PROPS} /> },
 ];
 
 interface ProbeReport {
@@ -58,6 +62,27 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("connect");
   const [capabilities, setCapabilities] = useState<DeviceCapabilities | null>(null);
   const [probe, setProbe] = useState<ProbeReport | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    const openRequestedSettings = async () => {
+      if (!alive) return;
+      try {
+        if (await invoke<boolean>("take_app_settings_request") && alive) setTab("app-settings");
+      } catch (e) {
+        console.warn("Could not open app settings", e);
+      }
+    };
+    // Subscribe before draining the pending request: a tray click during page
+    // startup must still navigate once React is ready.
+    void listen("open-app-settings", () => { void openRequestedSettings(); }).then(stop => {
+      if (!alive) { stop(); return; }
+      unlisten = stop;
+      void openRequestedSettings();
+    }).catch(e => console.warn("Could not listen for app settings requests", e));
+    return () => { alive = false; unlisten?.(); };
+  }, []);
 
   // iCloud auto-sync on app start. The backend merges the iCloud copy of
   // the automations library into the local file (per entry; conflicts
@@ -114,6 +139,7 @@ export default function App() {
       wide={tab === "keymap"}
     >
       {tab === "connect" && <Connect onReconnect={reconnect} />}
+      {tab === "app-settings" && <AppSettings />}
       {tab === "lighting" && <Lighting />}
       {tab === "system" && (capabilities?.protocol === "legacy_feature" ? <LegacySystem /> : <System />)}
       {tab === "keymap" && (capabilities && !capabilities.keymap ? capabilities.host_keyboard ? <HostKeymap /> : <UnavailableFeature name="Onboard key remapping" /> : <Keymap />)}

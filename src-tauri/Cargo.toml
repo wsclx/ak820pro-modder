@@ -17,9 +17,11 @@ tauri-build = { version = "2.7", features = [] }
 
 [dependencies]
 ak820-protocol = { path = "../crates/ak820-protocol" }
-tauri = { version = "2.12", features = ["devtools"] }
+tauri = { version = "2.12", features = ["devtools", "tray-icon"] }
 tauri-plugin-shell = "2.5"
 tauri-plugin-global-shortcut = "2.4"
+tauri-plugin-autostart = "2.7"
+tauri-plugin-single-instance = "2.5"
 # Native file-open dialog for the TFT image upload (Phase 5d). Lets the
 # frontend get a real filesystem path the backend can `std::fs::read`,
 # avoiding the JSON-array-of-bytes IPC overhead of passing the file
@@ -43,6 +45,7 @@ tokio = { version = "1", features = ["sync", "rt-multi-thread", "time", "macros"
 embedded-graphics = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSUserDefaults", "NSString"] }
 # Audio-reactive lighting (Phase 6 part 1b). `capture` pulls in
 # ScreenCaptureKit + the Swift static lib; the Swift runtime rpath is
 # baked in by `build.rs` below.

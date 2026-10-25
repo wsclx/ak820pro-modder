@@ -109,6 +109,10 @@ unlock it in the Lighting view.
 The System view shows firmware, battery and profile and sets the sleep
 timer. The app has a dark and a light theme.
 
+The AK820 menu bar icon can show or hide the window and quit the app.
+App settings offers optional start at login and keep-running-on-close;
+both start off. See [Startup and menu bar](docs/APP-LIFECYCLE.md).
+
 ## Install
 
 There are no signed releases yet; build from source. You need Rust 1.90
