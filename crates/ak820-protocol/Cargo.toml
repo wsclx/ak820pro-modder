@@ -27,3 +27,9 @@ time = { workspace = true }
 # pure-Rust (zune-jpeg) since `default-features = false` drops the
 # `jpeg-encoder` cargo feature; we only ever decode.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
+# Windows: hidapi's pure-Rust backend instead of the bundled C hidapi, so no
+# C toolchain is needed. Its rebuilt report descriptors are why the family-B
+# TFT check compares layouts rather than bytes (legacy_tft::same_report_layout).
+[target.'cfg(windows)'.dependencies]
+hidapi = { workspace = true, features = ["windows-native"] }

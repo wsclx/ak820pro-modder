@@ -177,23 +177,17 @@ pub fn worker_entry() {
         };
         let control = open(controls[0])?;
         let data = open(target)?;
-        // Match complete descriptors observed on the user's keyboard before
-        // issuing 04 72. Similar Sonix devices must never reach this path.
-        const CONTROL_DESC: &[u8] = &[
-            0x06, 0x13, 0xff, 0x09, 0x01, 0xa1, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08,
-            0x95, 0x40, 0x09, 0x02, 0x81, 0x02, 0x09, 0x03, 0x91, 0x02, 0x0a, 0x00, 0xff, 0xb1,
-            0x02, 0xc0,
-        ];
-        const DATA_DESC: &[u8] = &[
-            0x06, 0x68, 0xff, 0x09, 0x61, 0xa1, 0x01, 0x09, 0x62, 0x15, 0x00, 0x26, 0xff, 0x00,
-            0x95, 0x40, 0x75, 0x08, 0x81, 0x02, 0x09, 0x63, 0x15, 0x00, 0x26, 0xff, 0x00, 0x96,
-            0x00, 0x10, 0x75, 0x08, 0x91, 0x02, 0xc0,
-        ];
+        // Match the complete report layout observed on the user's keyboard
+        // before issuing 04 72. Similar Sonix devices must never reach this path.
         for (dev, expected) in [(&control, CONTROL_DESC), (&data, DATA_DESC)] {
             let mut desc = [0u8; 512];
             let n = dev.get_report_descriptor(&mut desc)?;
-            if &desc[..n] != expected {
-                return Err(failure("Legacy HID descriptor differs from the verified hardware layout; no write sent"));
+            if !same_report_layout(&desc[..n], expected) {
+                return Err(failure(format!(
+                    "Legacy HID descriptor differs from the verified hardware layout; no write sent. got={} expected={}",
+                    hex::encode(&desc[..n]),
+                    hex::encode(expected)
+                )));
             }
         }
         let _lock = crate::legacy::TransactionLock::acquire(target.pid)?;
@@ -231,6 +225,84 @@ pub fn worker_entry() {
         std::process::exit(1);
     }
     std::process::exit(0);
+}
+
+/// Report descriptors of the family-B control (0xFF13) and TFT data (0xFF68)
+/// interfaces, as macOS returns them from an ANSI 800A.
+const CONTROL_DESC: &[u8] = &[
+    0x06, 0x13, 0xff, 0x09, 0x01, 0xa1, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x40,
+    0x09, 0x02, 0x81, 0x02, 0x09, 0x03, 0x91, 0x02, 0x0a, 0x00, 0xff, 0xb1, 0x02, 0xc0,
+];
+const DATA_DESC: &[u8] = &[
+    0x06, 0x68, 0xff, 0x09, 0x61, 0xa1, 0x01, 0x09, 0x62, 0x15, 0x00, 0x26, 0xff, 0x00, 0x95, 0x40,
+    0x75, 0x08, 0x81, 0x02, 0x09, 0x63, 0x15, 0x00, 0x26, 0xff, 0x00, 0x96, 0x00, 0x10, 0x75, 0x08,
+    0x91, 0x02, 0xc0,
+];
+
+/// Whether two report descriptors describe the same reports.
+///
+/// macOS hands out the descriptor the keyboard sent. Windows has no API for
+/// that; hidapi's windows-native backend rebuilds a descriptor from the
+/// preparsed data and repeats global items (logical range, size, count) in
+/// front of every main item. The bytes differ, the layout does not, so the
+/// comparison runs on [`semantic_items`]. A descriptor that does not parse
+/// never matches.
+fn same_report_layout(got: &[u8], expected: &[u8]) -> bool {
+    match (semantic_items(got), semantic_items(expected)) {
+        (Some(got), Some(expected)) => got == expected,
+        _ => false,
+    }
+}
+
+/// One HID main item with the global state and local usages in effect for it.
+/// Two descriptors with equal sequences describe identical report layouts,
+/// regardless of how often global items are repeated.
+#[derive(Debug, PartialEq, Eq)]
+struct MainItem {
+    tag: u8,
+    data: u32,
+    globals: std::collections::BTreeMap<u8, u32>,
+    usages: Vec<u32>,
+}
+
+/// Parse short items (HID 1.11 § 6.2.2.2) into main items. Returns `None`
+/// for long items, reserved item types and truncated input.
+fn semantic_items(desc: &[u8]) -> Option<Vec<MainItem>> {
+    let mut globals = std::collections::BTreeMap::new();
+    let mut usages = Vec::new();
+    let mut items = Vec::new();
+    let mut i = 0;
+    while i < desc.len() {
+        let prefix = desc[i];
+        if prefix == 0xFE {
+            return None; // long items never appear on these interfaces
+        }
+        let size = match prefix & 3 {
+            3 => 4,
+            s => s as usize,
+        };
+        let bytes = desc.get(i + 1..i + 1 + size)?;
+        let data = bytes
+            .iter()
+            .rev()
+            .fold(0u32, |acc, &b| (acc << 8) | b as u32);
+        let (kind, tag) = ((prefix >> 2) & 3, prefix >> 4);
+        match kind {
+            0 => items.push(MainItem {
+                tag,
+                data,
+                globals: globals.clone(),
+                usages: std::mem::take(&mut usages),
+            }),
+            1 => {
+                globals.insert(tag, data);
+            }
+            2 => usages.push(((tag as u32) << 24) | data),
+            _ => return None,
+        }
+        i += 1 + size;
+    }
+    Some(items)
 }
 
 fn feature(device: &HidDevice, command: u8, subcommand: u8, value: u16) -> Result<()> {
@@ -297,6 +369,66 @@ mod tests {
         }
         assert!(check_slot(0).is_err());
         assert!(check_slot(4).is_err());
+    }
+
+    fn unhex(s: &str) -> Vec<u8> {
+        hex::decode(s).unwrap()
+    }
+
+    /// Descriptors hidapi 2.6 windows-native returns on Windows 11 for the
+    /// same ANSI 800A (bcdDevice 0x0110), rebuilt from preparsed data.
+    const WINDOWS_CONTROL_DESC: &str = "0613ff0901a1010902150026ff007508954081020903150026ff007508954091020a00ff150026ff0075089540b102c0";
+    const WINDOWS_DATA_DESC: &str =
+        "0668ff0961a1010962150026ff007508954081020963150026ff0075089600109102c0";
+
+    #[test]
+    fn windows_reconstructed_descriptors_match_the_verified_layout() {
+        let control = unhex(WINDOWS_CONTROL_DESC);
+        let data = unhex(WINDOWS_DATA_DESC);
+        // Different bytes, same reports.
+        assert_ne!(control, CONTROL_DESC);
+        assert_ne!(data, DATA_DESC);
+        assert!(same_report_layout(&control, CONTROL_DESC));
+        assert!(same_report_layout(&data, DATA_DESC));
+        assert!(same_report_layout(CONTROL_DESC, CONTROL_DESC));
+        assert!(same_report_layout(DATA_DESC, DATA_DESC));
+        // The two interfaces must not be mistaken for each other.
+        assert!(!same_report_layout(&control, DATA_DESC));
+        assert!(!same_report_layout(&data, CONTROL_DESC));
+    }
+
+    #[test]
+    fn descriptor_with_a_different_layout_is_rejected() {
+        // Output report count 0x40 instead of 4096 on the data interface.
+        let mut data = DATA_DESC.to_vec();
+        let at = data
+            .windows(3)
+            .position(|w| w == [0x96, 0x00, 0x10])
+            .unwrap();
+        data.splice(at..at + 3, [0x95, 0x40]);
+        assert!(!same_report_layout(&data, DATA_DESC));
+        // Feature report count 0x20 instead of 0x40 on the control interface.
+        let control = unhex(&WINDOWS_CONTROL_DESC.replace("9540b102", "9520b102"));
+        assert!(!same_report_layout(&control, CONTROL_DESC));
+        // Feature report replaced by an input report.
+        let control = unhex(&WINDOWS_CONTROL_DESC.replace("b102c0", "8102c0"));
+        assert!(!same_report_layout(&control, CONTROL_DESC));
+        // Different vendor usage page.
+        let control = unhex(&WINDOWS_CONTROL_DESC.replacen("0613ff", "0614ff", 1));
+        assert!(!same_report_layout(&control, CONTROL_DESC));
+    }
+
+    #[test]
+    fn malformed_descriptors_never_match() {
+        assert!(!same_report_layout(
+            &CONTROL_DESC[..CONTROL_DESC.len() - 2],
+            CONTROL_DESC
+        ));
+        assert!(!same_report_layout(
+            &[0xfe, 0x00, 0x00],
+            &[0xfe, 0x00, 0x00]
+        ));
+        assert!(!same_report_layout(&[0x06, 0x13], &[0x06, 0x13]));
     }
 
     #[test]

@@ -143,12 +143,33 @@ cargo build -p ak820-cli --release
 `ak820 --help` lists every command; add `--json` for machine-readable
 output.
 
+### Windows
+
+The CLI builds and runs on Windows 11 (tested with a family-B ANSI
+board). It uses hidapi's
+pure-Rust `windows-native` backend, so no C compiler is needed. The MSVC
+toolchain should work out of the box but hasn't been tried. With the GNU
+toolchain (`x86_64-pc-windows-gnu`) and no Visual Studio, `windows-sys`
+needs a `dlltool`. The one bundled with Rust calls an assembler (`as`) that
+isn't there, but LLVM's `llvm-ar` works as `dlltool` when renamed:
+
+```powershell
+rustup component add llvm-tools
+$bin = "$(rustc --print sysroot)\lib\rustlib\x86_64-pc-windows-gnu\bin"
+New-Item -ItemType Directory -Force "$HOME\dlltool" | Out-Null
+Copy-Item "$bin\llvm-ar.exe" "$HOME\dlltool\dlltool.exe"
+$env:Path = "$HOME\dlltool;$env:Path"
+cargo build -p ak820-cli --release
+```
+
+The desktop app hasn't been built or tried on Windows.
+
 ## Known issues
 
 - On our test board the display showed a preset only in its upper half ([#1](https://github.com/wsclx/ak820pro-modder/issues/1)), and some animations show horizontal noise lines ([#2](https://github.com/wsclx/ak820pro-modder/issues/2)). Since [#10](https://github.com/wsclx/ak820pro-modder/pull/10), uploads wait for the keyboard to acknowledge each chunk, which may fix #2; this hasn't been confirmed on hardware.
 - GIF frame timing may be off: several community projects use 2 ms per unit where we use 5 ms. A stopwatch test on hardware is pending.
 - iCloud sync covers the automations library only, not per-key colours or settings.
-- No Windows or Linux builds.
+- No Linux builds and no Windows build of the desktop app; the CLI works on Windows (see [Windows](#windows)).
 
 ## Project layout
 
